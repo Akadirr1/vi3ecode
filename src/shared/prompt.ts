@@ -25,7 +25,7 @@ export interface TurnEnd {
   done?: string
 }
 
-const MARKER = /^[\s>*_`#-]*(HANDOFF|DONE)\s*[*_`]*\s*[:：]\s*(.*)$/i
+const MARKER = /^[\s>*_`#-]*(HANDOFF|DONE)[*_`]*\s*[:：][*_`]*\s*(.*)$/i
 
 /**
  * Reads the protocol line a turn must end with: `HANDOFF: <Name> — <note>` or `DONE: <summary>`.

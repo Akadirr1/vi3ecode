@@ -44,7 +44,7 @@ export function parseNote(slug: string, text: string): MemoryNote {
     .split(',')
     .map((t) => t.trim().replace(/^["']|["']$/g, ''))
     .filter(Boolean)
-  body = body.replace(/^\s*\n/, '')
+  body = body.replace(/^\s*\n/, '').trimEnd()
   return {
     slug,
     title: unquote(fm.title ?? '') || slug,
