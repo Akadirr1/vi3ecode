@@ -42,6 +42,18 @@ jobs:
         env:
           # No signing certificate: macOS builds are ad-hoc signed, Windows builds are unsigned.
           CSC_IDENTITY_AUTO_DISCOVERY: false
+      - name: Smoke test the packaged app
+        if: runner.os != 'Linux'
+        run: node scripts/smoke.cjs
+      - name: Smoke test the packaged app (virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node scripts/smoke.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-${{ runner.os }}
+          path: smoke/
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: vi3ecode-${{ runner.os }}
