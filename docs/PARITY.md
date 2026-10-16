@@ -69,8 +69,16 @@ Side-by-side details: [MAPPING.md](MAPPING.md).
 - [x] Unit tests, typecheck, build in CI
 - [x] README (TR + EN)
 
-## Out of scope (needs vi3ecode's servers)
+## Out of scope (needs vi3ecode's servers or a backend of our own)
 
-Accounts and sign-in, subscriptions and payments, cloud sync, web dashboard, mobile app and remote
-control (pairing, end-to-end encryption), Bot Mode, Canvas / Work / Deploy / Marketing / Graph
-workspaces, auto-update.
+Accounts and sign-in, subscriptions and payments, cloud sync, the community stores, web dashboard,
+mobile app and remote control (relay, pairing, end-to-end encryption), deploy hosting, Marketing
+credits.
+
+## Not built yet (runs locally, no server needed)
+
+Bot Mode and the Canvas (Lab) / Work / Graph workspaces. The original gates them per account from its
+server, but the work itself runs on the user's own engines, so they need no server here.
+
+Auto-update can use GitHub Releases (electron-updater), with no server of our own; on macOS it needs a
+code-signed build.
