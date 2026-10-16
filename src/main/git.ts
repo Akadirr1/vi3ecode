@@ -16,7 +16,10 @@ export const GIT_FLAGS = ['-c', 'core.quotePath=false']
 // GIT_OPTIONAL_LOCKS=0: the panel polls status, which must not take index.lock from under an agent's own git commands.
 // diff --no-index exits 1 when the files differ, so callers can list extra exit codes that count as success.
 function git(projectId: string, args: string[], input?: string, okCodes: number[] = []): Promise<string> {
-  const cwd = getProject(projectId).path
+  return gitIn(getProject(projectId).path, args, input, okCodes)
+}
+
+export function gitIn(cwd: string, args: string[], input?: string, okCodes: number[] = []): Promise<string> {
   return new Promise((resolve, reject) => {
     const opts = { cwd, timeout: 20_000, maxBuffer: 20 * 1024 * 1024, windowsHide: true, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } }
     const child = execFile(gitExe(), [...GIT_FLAGS, ...args], opts, (err, out, errOut) =>
