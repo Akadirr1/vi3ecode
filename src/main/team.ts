@@ -5,7 +5,7 @@ import { shell } from 'electron'
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
-import type { Agent, GlobalTeam, Team, TeamRun, TeamTurn } from '../shared/types'
+import type { Activity, Agent, GlobalTeam, Team, TeamRun, TeamTurn } from '../shared/types'
 import { buildBrief, WRITE_BACK_INSTRUCTION } from '../shared/memory'
 import { agentById, buildTeamPrompt, decideNext, entryIds, findAgent, leadOf, parseTurnEnd } from '../shared/prompt'
 import { matchGuardrail } from '../shared/guardrails'
@@ -141,7 +141,8 @@ function startAgentTurn(
   prompt: string,
   resumeId: string | undefined,
   onText: (t: string, delta?: boolean) => void,
-  onTool: (n: string) => void
+  onTool: (n: string) => void,
+  onActivity: (a: Activity) => void
 ): AgentTurn {
   const adapter = getAdapter(agent.engine)
   if (agent.engine !== 'claude') {
@@ -149,6 +150,7 @@ function startAgentTurn(
     return runTurn(adapter, cwd, opts, (e) => {
       if (e.type === 'text') onText(e.text, e.delta)
       else if (e.type === 'tool') onTool(e.name)
+      if (e.type === 'text' || e.type === 'tool') onActivity(e.type === 'text' ? { kind: 'writing', at: Date.now() } : { kind: 'tool', tool: e.name, at: Date.now() })
     })
   }
   // Claude: a stream-json process for this one turn, so `ask` can raise approval cards in the thread.
@@ -178,6 +180,7 @@ function startAgentTurn(
     onTurnStart: () => {},
     onText: (t, delta) => onText(t, delta),
     onTool: (n, _f, detail) => onTool(detail ? `${n} ${detail}` : n),
+    onActivity,
     onSession: (sid) => (sessionId = sid),
     onRateLimit: (info) => setUsage('claude', info),
     onPermission: (req) => {
@@ -296,11 +299,16 @@ async function runNext(state: RunState): Promise<void> {
     (n) => {
       turn.tools.push(n)
       push(run)
+    },
+    (a) => {
+      turn.activity = a
+      push(run)
     }
   )
   state.turn = handle
   state.turnAgentId = agent.id
   const r = await handle.done
+  delete turn.activity
   state.turn = undefined
   state.turnAgentId = undefined
   run.pending = run.pending.filter((p) => p.agentId !== agent.id)

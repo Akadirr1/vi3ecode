@@ -64,6 +64,13 @@ export interface Settings {
 /** steered: sent while a turn was running and folded into that turn (Claude Code). */
 export type MessageStatus = 'running' | 'done' | 'error' | 'stopped' | 'queued' | 'steered'
 
+/** What a running turn last did and when; `tool` is the tool being called. Cleared when the turn ends. */
+export interface Activity {
+  kind: 'thinking' | 'writing' | 'tool'
+  tool?: string
+  at: number
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
@@ -81,6 +88,7 @@ export interface ChatMessage {
   mode?: 'plan'
   /** Why Auto picked this reply's engine; fallback: the task analysis failed and Auto used a balanced choice. */
   route?: { reason: string; fallback?: boolean }
+  activity?: Activity
 }
 
 export interface ChatSession {
@@ -197,6 +205,7 @@ export interface TeamTurn {
   error?: string
   startedAt: number
   endedAt?: number
+  activity?: Activity
 }
 
 export type RunStatus = 'running' | 'waiting' | 'done' | 'stopped' | 'error' | 'budget' | 'hop-cap'

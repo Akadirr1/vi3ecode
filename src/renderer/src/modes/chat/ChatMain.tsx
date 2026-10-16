@@ -4,6 +4,7 @@ import type { ChatMessage, ChatSession } from '../../../../shared/types'
 import { api } from '../../api'
 import { useApp, usableEngines } from '../../context'
 import { EngineIcon } from '../../components/EngineIcon'
+import { LiveStatus } from '../../components/LiveStatus'
 import { Prose } from '../../components/Prose'
 import { errorText, formatCost, formatDuration } from '../../components/format'
 import { t } from '../../i18n'
@@ -163,7 +164,7 @@ export function ChatMain() {
         {session?.messages.length ? (
           <div className="cm-col">
             {session.messages.map((m) => (
-              <Message key={m.id} m={m} />
+              <Message key={m.id} m={m} waiting={!!session.pending.length} />
             ))}
           </div>
         ) : (
@@ -220,16 +221,16 @@ export function ChatMain() {
   )
 }
 
-const STEP_ICONS: [RegExp, typeof FileText, string][] = [
-  [/^(read|view|ls|notebookread)/i, FileText, 'Reading'],
-  [/^(grep|glob|search|find|web_?search)/i, Search, 'Searching'],
-  [/(edit|write|patch)/i, Pencil, 'Editing'],
-  [/^(bash|shell|exec|command|run)/i, SquareTerminal, 'Running'],
-  [/^web|fetch/i, Globe, 'Browsing']
+const STEP_ICONS: [RegExp, typeof FileText][] = [
+  [/^(read|view|ls|notebookread)/i, FileText],
+  [/^(grep|glob|search|find|web_?search)/i, Search],
+  [/(edit|write|patch)/i, Pencil],
+  [/^(bash|shell|exec|command|run)/i, SquareTerminal],
+  [/^web|fetch/i, Globe]
 ]
 const stepKind = (name: string) => STEP_ICONS.find(([re]) => re.test(name))
 
-function Message({ m }: { m: ChatMessage }) {
+function Message({ m, waiting }: { m: ChatMessage; waiting: boolean }) {
   const { engines } = useApp()
   if (m.role === 'user') {
     const tag =
@@ -257,15 +258,13 @@ function Message({ m }: { m: ChatMessage }) {
   if (m.role === 'system') return <div className="cm-system">{m.text}</div>
 
   const running = m.status === 'running'
-  const last = m.tools?.at(-1)?.split(' ')[0]
-  const verb = last ? (stepKind(last)?.[2] ?? 'Working') : m.text ? 'Responding' : 'Thinking'
   return (
     <div className="cm-reply">
       {m.tools?.length ? <Steps tools={m.tools} /> : null}
       {m.text ? <Prose text={m.text} /> : null}
       {running ? (
-        <div className="cm-working" aria-live="polite">
-          {t(verb)}…
+        <div className="cm-working">
+          <LiveStatus since={m.ts} activity={m.activity} tools={m.tools} text={m.text} waiting={waiting} />
         </div>
       ) : (
         <div className="cm-foot">

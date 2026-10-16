@@ -37,6 +37,7 @@ export function runTurn(
   const files = new Set<string>()
   let resultText: string | undefined
   let resultError = false
+  let completed = false
   let costUsd: number | undefined
   let sessionId: string | undefined
   let stderr = ''
@@ -74,6 +75,7 @@ export function runTurn(
     else if (e.type === 'result') {
       resultText = e.text
       resultError = !!e.isError
+      completed = !e.isError
       if (typeof e.costUsd === 'number') costUsd = (costUsd ?? 0) + e.costUsd
     } else if (e.type === 'error') spawnError = e.message
     onEvent(e)
@@ -105,7 +107,8 @@ export function runTurn(
       if (!text && resultText) text = resultText.trim()
       let error: string | undefined
       if (!stopped) {
-        if (spawnError) error = spawnError
+        // A turn that completed with an answer outranks earlier non-fatal notices (e.g. Codex's model warnings).
+        if (spawnError && !(completed && text)) error = spawnError
         else if (resultError) error = resultText || 'The engine reported an error.'
         else if (code !== 0 && code !== null) error = lastLines(stderr) || `${adapter.label} exited with code ${code}`
         else if (code === null && !text) error = lastLines(stderr) || `${adapter.label} was terminated`

@@ -311,26 +311,9 @@
 .cm-working {
   align-self: flex-start;
   font-size: 14px;
-  font-weight: 500;
-  color: var(--text-2);
-  background: linear-gradient(90deg, var(--text-3) 30%, var(--text) 50%, var(--text-3) 70%) 0 0 / 250% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: cm-shimmer 1.8s linear infinite;
-}
-
-@keyframes cm-shimmer {
-  from {
-    background-position: 100% 0;
-  }
-  to {
-    background-position: -150% 0;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cm-working,
   .cm-spin {
     animation: none;
   }

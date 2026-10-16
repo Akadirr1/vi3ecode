@@ -4,7 +4,7 @@
 import spawn from 'cross-spawn'
 import type { ChildProcess } from 'node:child_process'
 import { isAbsolute, relative } from 'node:path'
-import type { ApprovalMode } from '../../shared/types'
+import type { Activity, ApprovalMode } from '../../shared/types'
 import { killTree, relPath, type TurnHandle, type TurnResult } from '../runner'
 import { matchGuardrail } from '../../shared/guardrails'
 import { binOf, getAdapter, spawnTarget } from './index'
@@ -51,6 +51,8 @@ export interface ClaudeSessionOpts {
   onText(text: string, delta?: boolean): void
   /** `detail`: one line of the tool's argument (command, path, pattern or URL), relative paths. */
   onTool(name: string, file?: string, detail?: string): void
+  /** Live progress (at most once a second per kind), so a long think or a slow tool never looks frozen. */
+  onActivity?(a: Activity): void
   onSession(id: string): void
   onPermission(req: PermissionRequest): void
   onRateLimit?(info: Record<string, unknown>): void
@@ -98,9 +100,18 @@ export class ClaudeSession {
   /** Assistant message ids whose text already arrived as deltas (the full message repeats it). */
   private streamed = new Set<string>()
   private curMsg = ''
+  private lastAct?: Activity
   private initSeen = false
   /** Counts turns, so a delayed action can tell whether the turn it was meant for is still the current one. */
   turnNo = 0
+
+  private activity(kind: Activity['kind'], tool?: string): void {
+    const at = Date.now()
+    const l = this.lastAct
+    if (l && l.kind === kind && l.tool === tool && at - l.at < 1000) return
+    this.lastAct = { kind, tool, at }
+    this.o.onActivity?.(this.lastAct)
+  }
 
   constructor(private o: ClaudeSessionOpts) {
     const target = spawnTarget(binOf(getAdapter('claude')))
@@ -230,10 +241,19 @@ export class ClaudeSession {
         if (e.subtype === 'init') this.initSeen = true
         if (e.subtype === 'init' && typeof e.session_id === 'string') this.o.onSession(e.session_id)
         return
+      case 'user': // a tool result or our own message echoed back: the model reads it next
+        this.activity('thinking')
+        return
       case 'stream_event': {
         const ev = (e.event ?? {}) as Record<string, unknown>
+        const block = ev.content_block as { type?: string; name?: string } | undefined
+        const delta = (ev.delta as { type?: string } | undefined)?.type
+        if (ev.type === 'message_start' || block?.type === 'thinking' || block?.type === 'redacted_thinking' || delta === 'thinking_delta') this.activity('thinking')
+        else if (block?.type === 'text' || delta === 'text_delta') this.activity('writing')
+        else if (block?.type === 'tool_use' || block?.type === 'server_tool_use') this.activity('tool', block.name)
+        else if (delta === 'input_json_delta') this.activity('tool', this.lastAct?.tool)
         if (ev.type === 'message_start') this.curMsg = String((ev.message as { id?: string } | undefined)?.id ?? '')
-        else if (ev.type === 'content_block_start' && (ev.content_block as { type?: string } | undefined)?.type === 'text') {
+        else if (ev.type === 'content_block_start' && block?.type === 'text') {
           if (!this.turn) this.beginTurn()
           this.streamed.add(this.curMsg)
           this.turn!.texts.push('')

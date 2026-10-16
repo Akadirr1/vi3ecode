@@ -1183,3 +1183,39 @@ label.field > .micro {
   border: 0;
   border-top: 1px solid var(--line);
 }
+
+/* A running turn: verb (shimmering) · elapsed, and a warning once the engine goes quiet. */
+.live-status {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.live-verb {
+  font-weight: 500;
+  background: linear-gradient(90deg, var(--text-3) 30%, var(--text) 50%, var(--text-3) 70%) 0 0 / 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: live-shimmer 1.8s linear infinite;
+}
+
+.live-quiet {
+  color: var(--warn);
+}
+
+@keyframes live-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-verb {
+    animation: none;
+  }
+}

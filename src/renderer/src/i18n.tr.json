@@ -739,5 +739,10 @@
   "Turn on notifications for this pane": "Bu panel için bildirimi aç",
   "Notifications on — alerts when this pane finishes": "Bildirim açık — bu panel bitince haber verilir",
   "Notifications off": "Bildirim kapalı",
-  "{name} · task finished": "{name} · işlem bitti"
+  "{name} · task finished": "{name} · işlem bitti",
+  "Delegating": "Görevlendiriyor",
+  "Exploring": "İnceliyor",
+  "Executing": "Çalıştırıyor",
+  "Waiting for approval": "Onay bekliyor",
+  "engine quiet for {minutes} min": "motor {minutes} dk'dır sessiz"
 }

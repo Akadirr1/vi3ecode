@@ -5,6 +5,7 @@ import { copyCount, roleOf } from '../../../../shared/prompt'
 import { api } from '../../api'
 import { t } from '../../i18n'
 import { Avatar } from '../../components/Avatar'
+import { LiveStatus } from '../../components/LiveStatus'
 import { Prose } from '../../components/Prose'
 import { formatCost } from '../../components/format'
 import { clock, errorText, stripProtocol } from './store'
@@ -57,6 +58,7 @@ export function Transcript({ run, team }: { run: TeamRun; team: Team | null }) {
               key={turn.id}
               turn={turn}
               agent={byId(turn.agentId)}
+              waiting={run.pending.some((p) => p.agentId === turn.agentId)}
               targets={turn.handoff ? turn.handoff.to.split(', ').map((n) => byName(n) ?? n) : []}
               onRetry={turn === lastAgent && run.status === 'error' ? () => act(api.team.continue(run.id)) : undefined}
             />
@@ -98,7 +100,7 @@ export function Transcript({ run, team }: { run: TeamRun; team: Team | null }) {
   )
 }
 
-function AgentTurn({ turn, agent, targets, onRetry }: { turn: TeamTurn; agent?: Agent; targets: (Agent | string)[]; onRetry?: () => void }) {
+function AgentTurn({ turn, agent, waiting, targets, onRetry }: { turn: TeamTurn; agent?: Agent; waiting: boolean; targets: (Agent | string)[]; onRetry?: () => void }) {
   const running = turn.status === 'running'
   const text = stripProtocol(turn.text)
   const name = agent && copyCount(agent) === 1 ? agent.name : turn.agentName // copies keep "Developer #2"
@@ -146,11 +148,7 @@ function AgentTurn({ turn, agent, targets, onRetry }: { turn: TeamTurn; agent?: 
               ) : null}
               <span className="mono faint">{clock(turn.startedAt)}</span>
               {turn.costUsd ? <span className="mono faint">{formatCost(turn.costUsd)}</span> : null}
-              {running ? <span className="am-dots" role="img" aria-label={t('working')}>
-                  <i />
-                  <i />
-                  <i />
-                </span> : null}
+              {running ? <LiveStatus since={turn.startedAt} activity={turn.activity} tools={turn.tools} text={text} waiting={waiting} /> : null}
               {turn.status === 'stopped' ? <span className="badge">{t('stopped')}</span> : null}
             </div>
             {text ? (

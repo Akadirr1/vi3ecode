@@ -122,6 +122,7 @@ function endTurn(s: ChatSession, r: { text: string; files: string[]; costUsd?: n
   const msg = active.get(s.id)
   active.delete(s.id)
   if (!msg || !sessions.has(s.id)) return // removed mid-turn
+  delete msg.activity
   msg.text = r.text || msg.text
   if (r.error) msg.text = `${msg.text ? msg.text + '\n\n' : ''}⚠ ${r.error}`
   msg.status = r.stopped ? 'stopped' : r.error ? 'error' : 'done'
@@ -174,6 +175,12 @@ function claudeFor(s: ChatSession): ClaudeSession {
       const msg = active.get(s.id) ?? newAssistant(s)
       msg.tools!.push(detail ? `${name} ${detail}` : name)
       if (f) msg.files = [...new Set([...(msg.files ?? []), f])]
+      push(s)
+    },
+    onActivity: (a) => {
+      const msg = active.get(s.id)
+      if (!msg) return
+      msg.activity = a
       push(s)
     },
     onSession: (sid) => (s.engineSessionId = sid),
@@ -257,9 +264,11 @@ function startTurn(s: ChatSession, userMsg: ChatMessage): void {
     (e) => {
       if (e.type === 'text') {
         msg.text += e.delta || !msg.text ? e.text : `\n\n${e.text}`
+        msg.activity = { kind: 'writing', at: Date.now() }
         push(s)
       } else if (e.type === 'tool') {
         msg.tools!.push(e.file ? `${e.name} ${e.file}` : e.name)
+        msg.activity = { kind: 'tool', tool: e.name, at: Date.now() }
         push(s)
       } else if (e.type === 'session') s.engineSessionId = e.id
     }
