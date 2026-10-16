@@ -75,5 +75,10 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
-          prerelease: true
+          # Installers only; the smoke screenshots stay in the run's artifacts.
+          files: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.AppImage
+          generate_release_notes: true
