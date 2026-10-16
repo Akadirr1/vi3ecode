@@ -59,7 +59,18 @@ app.on('web-contents-created', (_e, contents) => {
   })
 })
 
+// One instance per profile: a second one would rewrite the browser bridge token under the first one's engines.
+const primary = app.requestSingleInstanceLock()
+if (!primary) app.quit()
+app.on('second-instance', () => {
+  const win = BrowserWindow.getAllWindows()[0]
+  if (!win) return
+  if (win.isMinimized()) win.restore()
+  win.focus()
+})
+
 app.whenReady().then(() => {
+  if (!primary) return
   // Pages in the browser panel get no camera, microphone, location, notifications or clipboard reads.
   const web = session.fromPartition('persist:vi3e-browser')
   const allowed = new Set(['clipboard-sanitized-write', 'fullscreen'])

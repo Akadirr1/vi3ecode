@@ -6,7 +6,7 @@ import { buildBrief } from '../shared/memory'
 import { getProject, getSettings } from './store'
 import { emit } from './events'
 import { record, registerLive } from './activity'
-import { binOf, getAdapter } from './engines'
+import { binOf, getAdapter, spawnTarget } from './engines'
 import { dataDir, listMemory } from './project'
 import { writeFileAtomic } from './fsutil'
 
@@ -78,10 +78,11 @@ function engineLaunch(projectId: string, engine: EngineId, model?: string, effor
     }
   }
   // `clear` first: the pane opens on the engine's UI rather than on the long command line typed to start it.
-  // PowerShell runs a quoted path only with `&`; the full path to the .cmd also skips npm's .ps1 shim,
-  // which the default Restricted execution policy refuses to run.
+  // On Windows: the unwrapped npm shim (node + script), so neither npm's .ps1 (blocked by the default execution
+  // policy) nor its .cmd (which looks for a bare `node` in the project first) runs; PowerShell needs `&` for a quoted path.
+  const target = spawnTarget(binOf(adapter))
   const call = process.platform === 'win32' ? '& ' : ''
-  const command = `clear; ${call}${[binOf(adapter), ...args].map((a) => shellQuote(a)).join(' ')}`
+  const command = `clear; ${call}${[target.command, ...target.args, ...args].map((a) => shellQuote(a)).join(' ')}`
   return { command, label: adapter.label, model: m, effort: e }
 }
 

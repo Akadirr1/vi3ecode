@@ -978,6 +978,14 @@ label.field > .micro {
   padding: 0 24px;
 }
 
+.welcome-path {
+  min-width: 0;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .welcome h1 {
   margin: 0 0 10px;
   font-size: 28px;

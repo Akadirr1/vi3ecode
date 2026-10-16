@@ -108,8 +108,9 @@ export function spawnTarget(bin: string): { command: string; args: string[] } {
   const target = join(dirname(bin), rel)
   if (/\.exe$/i.test(target)) return { command: target, args: [] }
   const local = join(dirname(bin), 'node.exe')
-  const node = isFile(local) ? local : findOnPath('node')
-  return node ? { command: node, args: [target] } : { command: bin, args: [] }
+  // Without node on PATH the shim's bare `node` would be looked up in the project first: fail with ENOENT instead.
+  const node = isFile(local) ? local : (findOnPath('node') ?? join(dirname(process.execPath), 'not-on-path', 'node'))
+  return { command: node, args: [target] }
 }
 
 /** The file an npm cmd-shim runs, relative to the shim: `"%dp0%\node_modules\pkg\cli.js" %*` (or a native .exe). */

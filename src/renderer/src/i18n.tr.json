@@ -672,5 +672,7 @@
   "{n}h": "{n}sa",
   "{n}m": "{n}dk",
   "… {n} more lines not shown": "… {n} satır daha gösterilmiyor",
-  "≈{n} tokens / turn": "≈{n} token / tur"
+  "≈{n} tokens / turn": "≈{n} token / tur",
+  "From the project files, not allowed on this machine yet: {list}. Until you allow it, Full access runs as Edits and auto-approve stays off.": "Proje dosyalarından geldi, bu makinede henüz izin verilmedi: {list}. İzin verene kadar Tam erişim Düzenleme olarak çalışır, oto-onay kapalı kalır.",
+  "Allow on this machine": "Bu makinede izin ver"
 }

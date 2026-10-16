@@ -269,7 +269,7 @@ function Welcome({ projects, onOpen, onPick, ready }: { projects: Project[]; onO
             <button key={p.id} className="side-action" onClick={() => onPick(p.id)} title={p.path}>
               <FolderOpen size={15} />
               <span className="grow">{p.name}</span>
-              <span className="faint small mono">{p.path}</span>
+              <span className="faint small mono welcome-path">{p.path}</span>
             </button>
           ))}
         </div>

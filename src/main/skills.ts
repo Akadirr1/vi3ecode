@@ -1,14 +1,21 @@
 // Skills: .vi3ecode/skills/<name>/SKILL.md is the source. Installing copies it where each engine looks
 // (.claude/skills, .opencode/skill) and lists it in a marked AGENTS.md block for Codex, Cursor and Kimi.
-import { existsSync, readdirSync, readFileSync, rmdirSync, rmSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, readFileSync, rmdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Skill } from '../shared/types'
 import { oneLine, parseSkillMd, serializeSkillMd, SKILL_NAME_RE, withSkillsBlock, type SkillDoc } from '../shared/skills'
 import { getProject } from './store'
-import { writeFileAtomic } from './fsutil'
+import { assertInside, writeFileAtomic } from './fsutil'
 
 const source = (root: string, name: string) => join(root, '.vi3ecode', 'skills', name, 'SKILL.md')
 const copies = (root: string, name: string) => [join(root, '.claude', 'skills', name, 'SKILL.md'), join(root, '.opencode', 'skill', name, 'SKILL.md')]
+
+/** The project folder, once the folders skills are read from and copied to are known not to link outside it. */
+function rootOf(projectId: string): string {
+  const root = getProject(projectId).path
+  for (const p of ['.vi3ecode/skills', '.claude/skills', '.opencode/skill', 'AGENTS.md']) assertInside(root, join(root, p))
+  return root
+}
 
 function checkName(name: string): string {
   if (typeof name !== 'string' || !SKILL_NAME_RE.test(name)) throw new Error('Skill names use a-z, 0-9 and hyphens (up to 64 characters).')
@@ -17,6 +24,8 @@ function checkName(name: string): string {
 
 function read(root: string, name: string): SkillDoc | null {
   try {
+    // A committed symlink (SKILL.md -> ~/.ssh/id_rsa) must not be read, shown or copied into engine folders.
+    if (lstatSync(dirname(source(root, name))).isSymbolicLink() || lstatSync(source(root, name)).isSymbolicLink()) return null
     return { name, ...parseSkillMd(readFileSync(source(root, name), 'utf8')) }
   } catch {
     return null
@@ -63,10 +72,10 @@ function install(root: string, s: SkillDoc): void {
 
 export const skillsApi = {
   async list(projectId: string): Promise<Skill[]> {
-    return listSkills(getProject(projectId).path)
+    return listSkills(rootOf(projectId))
   },
   async save(projectId: string, skill: Omit<Skill, 'installed'>): Promise<Skill> {
-    const root = getProject(projectId).path
+    const root = rootOf(projectId)
     const s: SkillDoc = {
       name: checkName(skill?.name),
       description: oneLine(String(skill.description ?? '')).slice(0, 500),
@@ -82,14 +91,14 @@ export const skillsApi = {
     return { ...s, body: s.body.trim(), installed }
   },
   async remove(projectId: string, name: string): Promise<void> {
-    const root = getProject(projectId).path
+    const root = rootOf(projectId)
     checkName(name)
     for (const p of copies(root, name)) removeFile(p)
     removeFile(source(root, name))
     syncAgentsMd(root)
   },
   async setInstalled(projectId: string, name: string, installed: boolean): Promise<Skill[]> {
-    const root = getProject(projectId).path
+    const root = rootOf(projectId)
     const s = read(root, checkName(name))
     if (!s) throw new Error(`No skill named ${name}`)
     if (installed) install(root, s)

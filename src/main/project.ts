@@ -1,35 +1,18 @@
 // Files under <project>/.vi3ecode/ — committed with the repo: board, notes, team, memory vault.
-import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
-import { dirname, join, relative, sep } from 'node:path'
+import { lstatSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Kanban, MemoryNote, Notes, Team } from '../shared/types'
 import { MEMORY_TYPES } from '../shared/types'
 import { sanitizeBoard, sanitizeNotes, sanitizeTeam } from '../shared/schema'
 import { boardFromDisk, boardToDisk, notesFromDisk, notesToDisk, teamFromDisk, teamToDisk } from '../shared/formats'
 import { buildIndex, extractLinks, parseMemoryWrites, parseNote, serializeNote, slugify, SLUG_RE } from '../shared/memory'
 import { getProject } from './store'
-import { readJson, writeFileAtomic, writeJson } from './fsutil'
+import { assertInside, readJson, writeFileAtomic, writeJson } from './fsutil'
 
-/** A path under <project>/.vi3ecode. A symlink committed there must not make us read or write outside the project. */
-export function dataDir(projectId: string, ...parts: string[]): string {
+/** A path under <project>/.vi3ecode, refused when a committed symlink would lead outside the project. */
+export const dataDir = (projectId: string, ...parts: string[]) => {
   const root = getProject(projectId).path
-  const p = join(root, '.vi3ecode', ...parts)
-  let top: string
-  try {
-    top = realpathSync(root)
-  } catch {
-    return p // the project folder is gone: nothing there to link anywhere
-  }
-  let real = p
-  for (let dir = p; ; dir = dirname(dir)) {
-    try {
-      real = join(realpathSync(dir), relative(dir, p)) // the deepest part that exists, resolved
-      break
-    } catch {
-      if (dir === dirname(dir)) break
-    }
-  }
-  if (!real.startsWith(top + sep)) throw new Error('.vi3ecode/ links outside the project')
-  return p
+  return assertInside(root, join(root, '.vi3ecode', ...parts))
 }
 
 export const boardApi = {

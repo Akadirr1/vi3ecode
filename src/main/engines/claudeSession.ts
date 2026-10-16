@@ -99,6 +99,8 @@ export class ClaudeSession {
   private streamed = new Set<string>()
   private curMsg = ''
   private initSeen = false
+  /** Counts turns, so a delayed action can tell whether the turn it was meant for is still the current one. */
+  turnNo = 0
 
   constructor(private o: ClaudeSessionOpts) {
     const target = spawnTarget(binOf(getAdapter('claude')))
@@ -188,6 +190,7 @@ export class ClaudeSession {
   }
 
   private beginTurn(): void {
+    this.turnNo++
     this.turn = { texts: [], tools: [], files: new Set(), started: Date.now(), interrupted: false }
     this.o.onTurnStart()
   }
@@ -212,7 +215,7 @@ export class ClaudeSession {
   private exit(error?: string): void {
     if (this.closed && error === undefined) return this.o.onExit()
     this.closed = true
-    this.o.onExit(error, !!error && !!this.o.resumeId && !this.initSeen)
+    this.o.onExit(error, !!error && !!this.o.resumeId && !this.initSeen && /No conversation found/i.test(this.stderr))
   }
 
   private handle(line: string): void {
@@ -270,7 +273,7 @@ export class ClaudeSession {
       case 'result': {
         const isError = e.is_error === true || (typeof e.subtype === 'string' && e.subtype.startsWith('error'))
         // An unknown --resume id ends in an error result before any init, echoing the bad id back.
-        const resumeFailed = isError && !!this.o.resumeId && !this.initSeen
+        const resumeFailed = isError && !!this.o.resumeId && !this.initSeen && e.num_turns === 0
         if (typeof e.session_id === 'string' && !resumeFailed) this.o.onSession(e.session_id)
         const err = resumeFailed ? `No conversation found with session ID ${this.o.resumeId}.` : String(e.result ?? e.subtype ?? 'error')
         this.finishTurn(isError ? err : undefined, typeof e.total_cost_usd === 'number' ? e.total_cost_usd : undefined, typeof e.result === 'string' ? e.result : undefined, resumeFailed)

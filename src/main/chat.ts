@@ -29,7 +29,7 @@ const claude = new Map<string, ClaudeSession>()
 /** The assistant message the current turn writes into. */
 const active = new Map<string, ChatMessage>()
 /** Open permission requests, by approval id. */
-const requests = new Map<string, { sessionId: string; req: PermissionRequest }>()
+const requests = new Map<string, { sessionId: string; req: PermissionRequest; cs: ClaudeSession }>()
 let loaded = false
 
 registerLive('workingChats', () => active.size)
@@ -169,7 +169,7 @@ function claudeFor(s: ChatSession): ClaudeSession {
     onPermission: (req) => {
       const rule = getSettings().guardrails ? matchGuardrail(req.toolName, req.input) : null
       if (!rule && s.approval !== 'read-only' && (s.autoApprove || s.approval === 'full')) return cs.respond(req.id, req, true)
-      requests.set(req.id, { sessionId: s.id, req })
+      requests.set(req.id, { sessionId: s.id, req, cs })
       s.pending.push({ id: req.id, tool: req.tool, detail: describe(req, cwd), ts: Date.now(), ...(rule ? { guardrail: rule.title } : {}) })
       notify(`${s.title}: approval needed`, `${req.tool} ${describe(req, cwd)}`)
       push(s, true)
@@ -194,14 +194,16 @@ export function describe(req: PermissionRequest, cwd: string): string {
   return toolDetail(req.input, cwd) || req.description.slice(0, 300)
 }
 
+/** Denies and forgets this process's open approvals; a replacement process may already have its own. */
 function dropPending(s: ChatSession, cs: ClaudeSession): void {
   if (!s.pending.length) return
   for (const p of s.pending) {
     const r = requests.get(p.id)
-    if (r && cs.alive) cs.respond(p.id, r.req, false)
+    if (r?.cs !== cs) continue
+    if (cs.alive) cs.respond(p.id, r.req, false)
     requests.delete(p.id)
   }
-  s.pending = []
+  s.pending = s.pending.filter((p) => requests.has(p.id))
 }
 
 /** Expired or unknown Claude session: drop it (and its dying process) so the next message starts fresh with the chat's history. */
@@ -370,7 +372,7 @@ export const chatApi = {
     s.pending = s.pending.filter((p) => p.id !== approvalId)
     requests.delete(approvalId)
     if (r && r.sessionId === id) {
-      claude.get(id)?.respond(approvalId, r.req, !!allow && s.approval !== 'read-only', !!always)
+      if (r.cs.alive) r.cs.respond(approvalId, r.req, !!allow && s.approval !== 'read-only', !!always)
       record({ source: 'chat', kind: allow ? 'approval-allowed' : 'approval-denied', outcome: 'info', projectId: s.projectId, engine: s.engine })
     }
     push(s, true)
@@ -387,8 +389,9 @@ export const chatApi = {
     if (cs) {
       dropPending(s, cs)
       cs.interrupt()
-      // A process stuck in a tool may never answer the interrupt.
-      setTimeout(() => cs.busy && cs.kill(), 3000).unref()
+      // A process stuck in a tool may never answer the interrupt; a turn started since then is left alone.
+      const turn = cs.turnNo
+      setTimeout(() => cs.busy && cs.turnNo === turn && cs.kill(), 3000).unref()
     }
     push(s, true)
   },

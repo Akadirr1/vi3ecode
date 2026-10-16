@@ -486,6 +486,10 @@ export interface Api {
   team: {
     get(projectId: string): Promise<Team>
     save(projectId: string, team: Team): Promise<Team>
+    /** Full access ('<agent id>') and 'autoApprove' that came with the project files and are not allowed on this machine yet. */
+    unconfirmed(projectId: string): Promise<string[]>
+    /** Allow them; returns what is still unconfirmed (nothing). */
+    confirm(projectId: string): Promise<string[]>
     runs(projectId: string): Promise<TeamRun[]>
     start(projectId: string, goal: string, to?: string): Promise<TeamRun>
     /** Message the thread. Running: the next turn reads it (and goes to `to` if set). Idle: resumes the thread. */

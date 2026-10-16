@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { Plus, RotateCcw, X } from 'lucide-react'
+import { Plus, RotateCcw, ShieldAlert, X } from 'lucide-react'
 import type { Agent, ApprovalMode, EngineId, Team, TeamRun } from '../../../../shared/types'
 import { DEFAULT_TEAM } from '../../../../shared/schema'
 import { api } from '../../api'
@@ -38,6 +38,9 @@ export function TeamDialog({ initial, onClose }: { initial?: string; onClose(): 
   const runs = useRuns(project.id)
   const [sel, setSel] = useState(initial ?? '')
   const [error, setError] = useState('')
+  // Full access / auto-approve that came with the project files and is not allowed on this machine yet.
+  const [unconfirmed, setUnconfirmed] = useState<string[]>([])
+  const recheck = () => void api.team.unconfirmed(project.id).then(setUnconfirmed, () => {})
   const pending = useRef<Team | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const box = useRef<HTMLDivElement>(null)
@@ -47,14 +50,14 @@ export function TeamDialog({ initial, onClose }: { initial?: string; onClose(): 
     clearTimeout(timer.current)
     const next = pending.current
     pending.current = null
-    if (next) void saveTeam(project.id, next).catch((e) => setError(errorText(e)))
+    if (next) void saveTeam(project.id, next).then(recheck, (e) => setError(errorText(e)))
   }
   const update = (next: Team) => {
     setTeam(project.id, next)
     pending.current = next
     clearTimeout(timer.current)
     timer.current = setTimeout(() => {
-      if (pending.current) void api.team.save(project.id, pending.current).catch((e) => setError(errorText(e)))
+      if (pending.current) void api.team.save(project.id, pending.current).then(recheck, (e) => setError(errorText(e)))
     }, 400)
   }
   const close = () => {
@@ -63,6 +66,8 @@ export function TeamDialog({ initial, onClose }: { initial?: string; onClose(): 
   }
   const closeRef = useRef(close)
   closeRef.current = close
+
+  useEffect(recheck, [project.id])
 
   useEffect(() => {
     box.current?.focus()
@@ -83,6 +88,11 @@ export function TeamDialog({ initial, onClose }: { initial?: string; onClose(): 
   const lead = team.agents.find((a) => a.lead) ?? team.agents[0]
   const agent = sel === 'new' ? null : (team.agents.find((a) => a.id === sel) ?? lead)
   const run = runs.find((r) => r.id === runId)
+  const untrusted = unconfirmed.flatMap((x) => {
+    if (x === 'autoApprove') return team.routing.autoApprove ? [t('Auto-approve')] : []
+    const a = team.agents.find((y) => y.id === x && y.permission === 'full')
+    return a ? [`${a.name} · ${t('Full')}`] : []
+  })
 
   const add = (a: Agent) => {
     update({ ...team, agents: [...team.agents, a] })
@@ -109,6 +119,17 @@ export function TeamDialog({ initial, onClose }: { initial?: string; onClose(): 
             </span>
           ) : null}
         </div>
+        {untrusted.length ? (
+          <div className="td-trust" role="status">
+            <ShieldAlert size={15} />
+            <span className="grow">
+              {t('From the project files, not allowed on this machine yet: {list}. Until you allow it, Full access runs as Edits and auto-approve stays off.', { list: untrusted.join(', ') })}
+            </span>
+            <button className="btn small" onClick={() => void api.team.confirm(project.id).then(setUnconfirmed, (e) => setError(errorText(e)))}>
+              {t('Allow on this machine')}
+            </button>
+          </div>
+        ) : null}
         <div className="td-body">
           <aside className="td-side">
             <div className="td-side-head">

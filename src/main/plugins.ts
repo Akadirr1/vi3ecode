@@ -1,10 +1,13 @@
 // Built-in plugin catalog (no network). A plugin = a stdio MCP server handed to engines while active.
 // Activation lives in <project>/.vi3ecode/plugins.json so it travels with the repo, but a plugin only
 // runs once someone confirmed it on this machine: a cloned repo cannot start servers on its own.
-import { join } from 'node:path'
+import { existsSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import type { PluginInfo } from '../shared/types'
 import { getProject, userDir } from './store'
 import { readJson, writeJson } from './fsutil'
+import { findOnPath } from './engines'
+import { dataDir } from './project'
 
 type CatalogEntry = Omit<PluginInfo, 'active'>
 
@@ -55,11 +58,23 @@ export function parseActive(raw: unknown): string[] {
 
 export type McpServers = Record<string, { command: string; args: string[] }>
 
-/** Engines start MCP servers without a shell; on Windows `npx` is npx.cmd, which only cmd can run. */
+/**
+ * Engines start MCP servers without a shell, and on Windows `npx` is usually npx.cmd. Going through cmd.exe would
+ * look for npx in the project folder first and re-parse the arguments, so run npm's npx-cli.js with node instead.
+ */
+function windowsNpx(args: string[]): { command: string; args: string[] } {
+  const npx = findOnPath('npx')
+  if (npx && /\.exe$/i.test(npx)) return { command: npx, args } // Volta and similar ship a real executable
+  const node = findOnPath('node')
+  const cli = node ? join(dirname(node), 'node_modules', 'npm', 'bin', 'npx-cli.js') : ''
+  if (node && existsSync(cli)) return { command: node, args: [cli, ...args] }
+  return { command: join(dirname(process.execPath), 'not-on-path', 'npx'), args } // fails visibly as a missing server
+}
+
 const resolveMcp = (p: CatalogEntry, projectPath: string) => {
   if (!p.mcp) return undefined
   const args = p.mcp.args.map((a) => (a === '{project}' ? projectPath : a))
-  return process.platform === 'win32' ? { command: 'cmd', args: ['/c', p.mcp.command, ...args] } : { command: p.mcp.command, args }
+  return process.platform === 'win32' && p.mcp.command === 'npx' ? windowsNpx(args) : { command: p.mcp.command, args }
 }
 
 /** Server entries for the given plugin ids; named vi3ecode-<id> so they never clash with the user's own servers. */
@@ -118,7 +133,7 @@ export const pluginsApi = {
       ids.delete(id)
       ok.delete(consentKey(path, id))
     }
-    writeJson(stateFile(path), { version: 1, active: CATALOG.map((p) => p.id).filter((x) => ids.has(x)) })
+    writeJson(dataDir(projectId, 'plugins.json'), { version: 1, active: CATALOG.map((p) => p.id).filter((x) => ids.has(x)) })
     writeJson(consentFile(), [...ok])
     return list(path)
   }

@@ -139,8 +139,9 @@ export const flowsApi = {
   },
   async save(projectId: string, flow: Flow): Promise<Flow> {
     const clean = sanitizeFlow({ ...flow, updatedAt: Date.now() })
+    const before = readFlows(projectId).find((f) => f.id === clean.id) ?? null
     writeJson(join(flowDir(projectId), `${clean.id}.json`), clean)
-    trustFlow(getProject(projectId).path, clean)
+    trustFlow(getProject(projectId).path, clean, before)
     return clean
   },
   async remove(projectId: string, id: string): Promise<void> {

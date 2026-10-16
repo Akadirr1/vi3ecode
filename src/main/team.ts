@@ -14,7 +14,7 @@ import { getAdapter, setUsage } from './engines'
 import { ClaudeSession, type PermissionRequest } from './engines/claudeSession'
 import { runTurn, type TurnResult } from './runner'
 import { GIT_FLAGS, gitExe } from './git'
-import { effectiveTeam, trustTeam } from './trust'
+import { confirmTeam, effectiveTeam, trustTeam, unconfirmedTeam } from './trust'
 import { describe } from './chat'
 import { mcpConfigJson } from './mcp'
 import { BROWSER_ACT_TOOLS, BROWSER_READ_TOOLS } from './browserBridge'
@@ -204,8 +204,10 @@ function startAgentTurn(
 
 async function runNext(state: RunState): Promise<void> {
   const { run } = state
-  // A function, so TypeScript does not narrow away the stop() that can land during an await.
-  const stopped = () => run.status === 'stopped'
+  // A function, so TypeScript does not narrow away the stop() that can land during an await; a stop followed by a
+  // quick restart (gen moved on) also ends this chain, which must not route the new stretch.
+  const gen = state.gen
+  const stopped = () => run.status === 'stopped' || gen !== state.gen
   if (stopped()) return
   const cwd = getProject(run.projectId).path
   const team = effectiveTeam(cwd, readTeam(run.projectId))
@@ -445,8 +447,9 @@ export const globalsApi = {
   async useGlobal(projectId: string, id: string): Promise<Team> {
     const g = readGlobals().find((x) => x.id === id)
     if (!g) throw new Error('Unknown library team')
+    const before = readTeam(projectId)
     const team = writeTeam(projectId, g.team)
-    trustTeam(getProject(projectId).path, team)
+    trustTeam(getProject(projectId).path, team, before)
     return team
   },
   async removeGlobal(id: string): Promise<GlobalTeam[]> {
@@ -460,9 +463,17 @@ export const teamApi = {
     return readTeam(projectId)
   },
   async save(projectId: string, team: Team): Promise<Team> {
+    const before = readTeam(projectId)
     const saved = writeTeam(projectId, team)
-    trustTeam(getProject(projectId).path, saved)
+    trustTeam(getProject(projectId).path, saved, before)
     return saved
+  },
+  async unconfirmed(projectId: string): Promise<string[]> {
+    return unconfirmedTeam(getProject(projectId).path, readTeam(projectId))
+  },
+  async confirm(projectId: string): Promise<string[]> {
+    confirmTeam(getProject(projectId).path, readTeam(projectId))
+    return []
   },
   async runs(projectId: string): Promise<TeamRun[]> {
     loadAll()
