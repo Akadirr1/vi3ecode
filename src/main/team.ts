@@ -4,7 +4,7 @@
 import { shell } from 'electron'
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import type { Agent, GlobalTeam, Team, TeamRun, TeamTurn } from '../shared/types'
 import { buildBrief, WRITE_BACK_INSTRUCTION } from '../shared/memory'
 import { agentById, buildTeamPrompt, decideNext, entryIds, findAgent, leadOf, parseTurnEnd } from '../shared/prompt'
@@ -15,9 +15,9 @@ import { getAdapter, setUsage } from './engines'
 import { ClaudeSession, type PermissionRequest } from './engines/claudeSession'
 import { runTurn, type TurnResult } from './runner'
 import { GIT_FLAGS, gitExe } from './git'
-import { createWorktree, mergeWorktree, removeWorktree, worktreeDiff } from './worktree'
+import { createWorktree, isOurWorktree, mergeWorktree, removeWorktree, worktreeDiff, worktreeDirty } from './worktree'
 import { confirmTeam, effectiveTeam, trustTeam, unconfirmedTeam } from './trust'
-import { describe } from './chat'
+import { chatBusyIn, describe } from './chat'
 import { mcpConfigJson } from './mcp'
 import { BROWSER_ACT_TOOLS, BROWSER_READ_TOOLS } from './browserBridge'
 import { emit, notify } from './events'
@@ -76,6 +76,8 @@ function loadAll(): void {
     const run = readJson<TeamRun | null>(userDir('team-runs', n), null)
     if (!run || !ID_RE.test(run.id) || !Array.isArray(run.turns)) continue
     for (const t of run.turns) t.kind ??= 'agent'
+    // An edited run file must not point remove/merge/reveal at another folder or branch.
+    if (run.worktree !== undefined && !isOurWorktree(run.worktree)) delete run.worktree
     if (run.status === 'running') {
       run.status = 'stopped' // a turn cannot survive an app restart
       for (const t of run.turns) if (t.status === 'running') t.status = 'stopped'
@@ -86,6 +88,7 @@ function loadAll(): void {
 }
 
 function save(r: TeamRun): void {
+  if (!runs.has(r.id)) return // removed while its last turn was winding down
   mkdirSync(userDir('team-runs'), { recursive: true })
   writeJson(file(r.id), { ...r, pending: [] })
 }
@@ -585,11 +588,16 @@ export const teamApi = {
   },
   async remove(runId: string, force?: boolean): Promise<void> {
     const state = getState(runId)
+    const wt = state.run.worktree
+    const project = getProject(state.run.projectId).path
+    // Asked before anything stops, so Cancel leaves a working thread working.
+    if (wt && !force && (await worktreeDirty(project, wt))) throw new Error('WORK_WORKTREE_DIRTY')
     if (state.run.status === 'running') state.run.status = 'stopped'
     state.gen++
     state.turn?.stop()
-    // A refused removal (uncommitted or unmerged work) keeps the thread, stopped.
-    if (state.run.worktree) await removeWorktree(getProject(state.run.projectId).path, state.run.worktree, force === true)
+    // The engine's process runs inside the tree: let it exit (stop kills it after 3 s) before the folder goes.
+    if (wt) await Promise.race([state.chain, new Promise((r) => setTimeout(r, 5000))])
+    if (wt) await removeWorktree(project, wt, force === true)
     runs.delete(runId)
     rmSync(file(runId), { force: true })
   },
@@ -598,7 +606,7 @@ export const teamApi = {
     if (!run.worktree) throw new Error('This thread works in the project folder; there is nothing to merge.')
     if (run.status === 'running') throw new Error('Wait for the team to finish first.')
     // Like vi3ecode: never merge into the project checkout while a thread is working in it.
-    if ([...runs.values()].some((s) => s.run.projectId === run.projectId && !s.run.worktree && s.run.status === 'running'))
+    if (chatBusyIn(run.projectId) || [...runs.values()].some((s) => s.run.projectId === run.projectId && !s.run.worktree && s.run.status === 'running'))
       throw new Error('Another thread is working in the project folder. Merge once it finishes.')
     // shortcut: the leftover commit is titled with the goal's first line; vi3ecode has an engine write it from the diff.
     await mergeWorktree(getProject(run.projectId).path, run.worktree, run.goal.split('\n')[0].slice(0, 72) || 'Agent thread')
@@ -610,7 +618,7 @@ export const teamApi = {
   },
   async reveal(runId: string): Promise<void> {
     const { run } = getState(runId)
-    if (run.worktree) await shell.openPath(run.worktree.root)
+    if (run.worktree && existsSync(run.worktree.root) && statSync(run.worktree.root).isDirectory()) await shell.openPath(run.worktree.root)
   }
 }
 

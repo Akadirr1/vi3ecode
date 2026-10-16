@@ -8,7 +8,7 @@ const tmp = mkdtempSync(join(tmpdir(), 'vi3e-wt-'))
 vi.mock('../src/main/store', () => ({ userDir: (...p: string[]) => join(tmp, 'user', ...p), getProject: () => ({}), getSettings: () => ({ hiddenEngines: [] }) }))
 vi.mock('../src/main/activity', () => ({ record: () => {} }))
 Object.assign(process.env, { GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' })
-const { createWorktree, mergeWorktree, removeWorktree, workName, worktreeDiff } = await import('../src/main/worktree')
+const { createWorktree, isOurWorktree, mergeWorktree, removeWorktree, workName, worktreeDiff } = await import('../src/main/worktree')
 
 const sh = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' })
 function repo(name: string): string {
@@ -18,9 +18,10 @@ function repo(name: string): string {
   writeFileSync(join(dir, 'a.txt'), 'one\n')
   writeFileSync(join(dir, '.gitignore'), '.env\n')
   writeFileSync(join(dir, '.env'), 'SECRET=1\n')
-  writeFileSync(join(dir, '.worktreeinclude'), '.env\n')
+  writeFileSync(join(dir, '.worktreeinclude'), '.env\nnotes.txt\n')
   sh(dir, 'add', '-A')
   sh(dir, 'commit', '-qm', 'init')
+  writeFileSync(join(dir, 'notes.txt'), 'not ignored\n') // listed in .worktreeinclude but not gitignored: never copied
   return dir
 }
 
@@ -37,6 +38,7 @@ describe('thread worktrees', () => {
     expect(wt.root).toBe(join(tmp, 'app-vi3ecode-worktrees', basename(wt.root)))
     expect(wt.branch).toBe(`work/${basename(wt.root)}`)
     expect(readFileSync(join(wt.root, '.env'), 'utf8')).toBe('SECRET=1\n') // from .worktreeinclude
+    expect(existsSync(join(wt.root, 'notes.txt'))).toBe(false)
     writeFileSync(join(wt.path, 'b.txt'), 'two\n')
     expect(await worktreeDiff(dir, wt)).toContain('Untracked:\nb.txt')
     await expect(removeWorktree(dir, wt)).rejects.toThrow('WORK_WORKTREE_DIRTY')
@@ -56,9 +58,45 @@ describe('thread worktrees', () => {
     writeFileSync(join(dir, 'a.txt'), 'ours\n')
     sh(dir, 'commit', '-qam', 'ours')
     await expect(mergeWorktree(dir, wt, 'Edit a')).rejects.toThrow(/Merge failed and was aborted/)
-    expect(sh(dir, 'status', '--porcelain')).toBe('')
+    expect(sh(dir, 'status', '--porcelain', '--untracked-files=no')).toBe('')
     expect(existsSync(join(dir, '.git', 'MERGE_HEAD'))).toBe(false)
     await removeWorktree(dir, wt, true)
     expect(existsSync(wt.root)).toBe(false)
+  })
+
+  it("never touches the user's own merge in progress or local edits", async () => {
+    const dir = repo('busy')
+    const wt = await createWorktree(dir, 'Edit b')
+    writeFileSync(join(wt.root, 'b.txt'), 'b\n')
+    // A merge the user is resolving in the project checkout
+    sh(dir, 'checkout', '-qb', 'side')
+    writeFileSync(join(dir, 'a.txt'), 'side\n')
+    sh(dir, 'commit', '-qam', 'side')
+    sh(dir, 'checkout', '-q', 'main')
+    writeFileSync(join(dir, 'a.txt'), 'main\n')
+    sh(dir, 'commit', '-qam', 'main')
+    try {
+      sh(dir, 'merge', 'side')
+    } catch {
+      // conflict expected
+    }
+    writeFileSync(join(dir, 'a.txt'), 'resolved\n')
+    sh(dir, 'add', 'a.txt')
+    await expect(mergeWorktree(dir, wt, 'Edit b')).rejects.toThrow(/middle of a merge/)
+    expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('resolved\n')
+    expect(existsSync(join(dir, '.git', 'MERGE_HEAD'))).toBe(true)
+    sh(dir, 'commit', '-qm', 'merged side')
+    // An unrelated local edit (the app's own .vi3ecode files, say) neither blocks the merge nor gets lost.
+    writeFileSync(join(dir, 'a.txt'), 'local edit\n')
+    await mergeWorktree(dir, wt, 'Edit b')
+    expect(readFileSync(join(dir, 'a.txt'), 'utf8')).toBe('local edit\n')
+    expect(readFileSync(join(dir, 'b.txt'), 'utf8')).toBe('b\n')
+  })
+
+  it('only trusts worktree records in its own layout', () => {
+    expect(isOurWorktree({ root: '/r/app-vi3ecode-worktrees/fix-abc', path: '/r/app-vi3ecode-worktrees/fix-abc', branch: 'work/fix-abc' })).toBe(true)
+    expect(isOurWorktree({ root: '/r/app-vi3ecode-worktrees/fix-abc', path: '/x', branch: 'main' })).toBe(false)
+    expect(isOurWorktree({ root: '/home/me', path: '/home/me', branch: 'work/me' })).toBe(false)
+    expect(isOurWorktree({ root: '/r/app-vi3ecode-worktrees/x', path: '/x', branch: 'work/-x' })).toBe(false)
   })
 })

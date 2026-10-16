@@ -279,6 +279,9 @@ function startTurn(s: ChatSession, userMsg: ChatMessage): void {
 
 const isBusy = (id: string) => active.has(id) || running.has(id)
 
+/** A chat turn is working in this project's folder right now. */
+export const chatBusyIn = (projectId: string) => [...sessions.values()].some((s) => s.projectId === projectId && isBusy(s.id))
+
 /** Auto: the cheapest available model classifies the message, then the best-scoring route takes the turn (switched through update). */
 async function autoRoute(s: ChatSession, text: string): Promise<NonNullable<ChatMessage['route']>> {
   const engines = await enginesApi.list()
