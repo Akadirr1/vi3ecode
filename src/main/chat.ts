@@ -34,7 +34,7 @@ const active = new Map<string, ChatMessage>()
 /** Open permission requests, by approval id. */
 const requests = new Map<string, { sessionId: string; req: PermissionRequest; cs: ClaudeSession }>()
 /** Chats whose Auto classifier is running, and the route the next assistant message gets. */
-const routing = new Set<string>()
+const routing = new Map<string, TurnHandle | undefined>()
 const routes = new Map<string, NonNullable<ChatMessage['route']>>()
 let loaded = false
 
@@ -285,17 +285,24 @@ export const chatBusyIn = (projectId: string) => [...sessions.values()].some((s)
 /** Auto: the cheapest available model classifies the message, then the best-scoring route takes the turn (switched through update). */
 async function autoRoute(s: ChatSession, text: string): Promise<NonNullable<ChatMessage['route']>> {
   const engines = await enginesApi.list()
-  const ready = (id: EngineId) => engines.some((e) => e.id === id && e.installed && e.enabled && e.headless) && (s.runMode !== 'plan' || canPlan(id))
+  // Codex cannot ask before an edit: with "Ask every time" it would edit freely, so Auto keeps to engines that ask.
+  const ready = (id: EngineId) =>
+    engines.some((e) => e.id === id && e.installed && e.enabled && e.headless) && (s.runMode !== 'plan' || canPlan(id)) && (id !== 'codex' || approvalFor(s) !== 'ask')
   const cands = ROUTES.filter((r) => ready(r.engine)).map((r) => ({ ...r, efforts: getAdapter(r.engine).efforts }))
   const c = classifierOf(cands)
   if (!c) throw new Error('Auto found no available engine. Enable or sign in to Claude or Codex, or pick a model manually.')
-  const h = runTurn(getAdapter(c.engine), tmpdir(), { prompt: classifierPrompt(text), model: c.model, effort: 'low', approval: 'read-only' })
+  const h = runTurn(getAdapter(c.engine), tmpdir(), { prompt: classifierPrompt(text), model: c.model, effort: 'low', approval: 'read-only', textOnly: true })
+  routing.set(s.id, h)
   const timer = setTimeout(h.stop, 20_000) // the original's timeout is not known
   const r = await h.done
   clearTimeout(timer)
-  const parsed = parseClassification(r.text)
+  if (r.stopped && !routing.has(s.id)) throw new Error('Stopped')
+  const parsed = r.error ? null : parseClassification(r.text)
   const cls = parsed ?? FALLBACK
-  await chatApi.update(s.id, pickRoute(cands, cls, s)!)
+  // An engine whose classifier call failed (signed out, over its limit) would fail the turn too.
+  const pool = r.error ? cands.filter((x) => x.engine !== c.engine) : cands
+  if (!pool.length) throw new Error(r.error ?? 'Auto found no available engine.')
+  await chatApi.update(s.id, pickRoute(pool, cls, s)!)
   return { reason: cls.reason || `${cls.taskKind} · ${cls.complexity}`, ...(parsed ? {} : { fallback: true }) }
 }
 
@@ -375,50 +382,60 @@ export const chatApi = {
     if (routing.has(id)) throw new Error('Auto is still choosing an engine…')
     const msg: ChatMessage = { id: randomUUID(), role: 'user', text: body.slice(0, 200_000), ts: Date.now() }
     const history = s.messages.slice()
+    const title = s.title
     s.messages.push(msg)
     if (s.title === 'New chat') s.title = body.split('\n')[0].slice(0, 60)
     if (s.auto && !isBusy(id)) {
-      routing.add(id)
+      routing.set(id, undefined)
       push(s, true)
       try {
         routes.set(id, await autoRoute(s, msg.text))
       } catch (e) {
-        s.messages = s.messages.filter((m) => m !== msg) // the renderer puts the text back in the composer
+        // The renderer puts the text back in the composer; a rename or pin meanwhile may have saved the message.
+        s.messages = s.messages.filter((m) => m !== msg)
+        s.title = title
+        routes.delete(id)
+        if (sessions.has(id)) save(s)
         push(s, true)
         throw e
       } finally {
         routing.delete(id)
       }
     }
-    if (s.runMode === 'plan' && canPlan(s.engine)) msg.mode = 'plan' // after routing: Auto may switch the engine
-    if (s.engine === 'claude') {
-      const before = claude.get(id)
-      const cs = claudeFor(s)
-      const fresh = cs !== before
-      if (cs.busy) {
-        msg.status = 'steered' // folded into the running turn, in whatever mode that turn runs
-        delete msg.mode
-        cs.send(msg.text)
-      } else {
-        const sys = systemText(s.projectId)
-        const text = withRunMode(msg, history)
-        // A new process without a resumable session has no context: replay what the user saw.
-        const prompt = fresh && !s.engineSessionId ? withHistory(history, text) : text
-        cs.send(sys ? `${sys}\n\n---\n\n${prompt}` : prompt)
+    try {
+      if (s.runMode === 'plan' && canPlan(s.engine)) msg.mode = 'plan' // after routing: Auto may switch the engine
+      if (s.engine === 'claude') {
+        const before = claude.get(id)
+        const cs = claudeFor(s)
+        const fresh = cs !== before
+        if (cs.busy) {
+          msg.status = 'steered' // folded into the running turn, in whatever mode that turn runs
+          delete msg.mode
+          cs.send(msg.text)
+        } else {
+          const sys = systemText(s.projectId)
+          const text = withRunMode(msg, history)
+          // A new process without a resumable session has no context: replay what the user saw.
+          const prompt = fresh && !s.engineSessionId ? withHistory(history, text) : text
+          cs.send(sys ? `${sys}\n\n---\n\n${prompt}` : prompt)
+        }
+        save(s)
+        push(s, true)
+        return
       }
+      if (isBusy(id)) {
+        msg.status = 'queued'
+        queues.set(id, [...(queues.get(id) ?? []), msg.id])
+        save(s)
+        push(s, true)
+        return
+      }
+      startTurn(s, msg)
       save(s)
-      push(s, true)
-      return
+    } catch (e) {
+      routes.delete(id) // a reply that never started must not leave its route to a later one
+      throw e
     }
-    if (isBusy(id)) {
-      msg.status = 'queued'
-      queues.set(id, [...(queues.get(id) ?? []), msg.id])
-      save(s)
-      push(s, true)
-      return
-    }
-    startTurn(s, msg)
-    save(s)
   },
   async respond(id: string, approvalId: string, allow: boolean, always?: boolean): Promise<void> {
     const s = get(id)
@@ -438,6 +455,7 @@ export const chatApi = {
       if (m) m.status = 'stopped'
     }
     queues.delete(id)
+    stopRouting(id)
     running.get(id)?.stop()
     const cs = claude.get(id)
     if (cs) {
@@ -457,12 +475,21 @@ export const chatApi = {
     claude.delete(id)
     active.delete(id)
     routes.delete(id)
+    stopRouting(id)
     sessions.delete(id)
     rmSync(file(id), { force: true })
   }
 }
 
+/** Ends a running Auto classifier; its send then fails and the text goes back to the composer. */
+function stopRouting(id: string): void {
+  const h = routing.get(id)
+  routing.delete(id)
+  h?.stop()
+}
+
 export function stopAllChats(): void {
+  for (const id of [...routing.keys()]) stopRouting(id)
   for (const h of running.values()) h.stop()
   for (const cs of claude.values()) cs.kill()
 }

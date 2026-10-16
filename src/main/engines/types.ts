@@ -11,6 +11,8 @@ export interface TurnOpts {
   resumeId?: string
   /** `{"mcpServers":{…}}` JSON: plugin servers and the browser panel bridge, for engines that take MCP per run. */
   mcpConfig?: string
+  /** A plain text answer (Auto's classifier): no tools, no MCP, nothing kept in the engine's session history. */
+  textOnly?: boolean
 }
 
 /** Normalized stream events, whatever the engine. */

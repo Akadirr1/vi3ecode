@@ -24,6 +24,7 @@ export const claude: EngineAdapter = {
     if (o.model) args.push('--model', o.model)
     if (o.effort) args.push('--effort', o.effort)
     if (o.mcpConfig) args.push('--mcp-config', o.mcpConfig)
+    if (o.textOnly) args.push('--tools', '', '--strict-mcp-config', '--no-session-persistence')
     return { args, stdin: withSystem(o) }
   },
   parse(line) {
