@@ -77,6 +77,8 @@ export interface ChatMessage {
   costUsd?: number
   durationMs?: number
   status?: MessageStatus
+  /** A user message sent in Plan run mode. */
+  mode?: 'plan'
 }
 
 export interface ChatSession {
@@ -89,6 +91,8 @@ export interface ChatSession {
   approval: ApprovalMode
   /** Composer switch: answer every approval request with allow (never widens read-only). */
   autoApprove: boolean
+  /** Composer run mode: Plan runs read-only and ends in a plan (engines in PLAN_ENGINES); missing means Build. */
+  runMode?: 'plan'
   /** Engine-side session/thread id used to resume the conversation. */
   engineSessionId?: string
   messages: ChatMessage[]
@@ -474,7 +478,7 @@ export interface Api {
     list(projectId: string): Promise<ChatSummary[]>
     get(id: string): Promise<ChatSession | null>
     create(projectId: string, engine?: EngineId): Promise<ChatSession>
-    update(id: string, patch: Partial<Pick<ChatSession, 'title' | 'engine' | 'approval' | 'model' | 'effort' | 'autoApprove'>>): Promise<ChatSession>
+    update(id: string, patch: Partial<Pick<ChatSession, 'title' | 'engine' | 'approval' | 'model' | 'effort' | 'autoApprove'>> & { runMode?: 'plan' | '' }): Promise<ChatSession>
     /** Starts a turn. While one runs: steers it (Claude Code) or queues the text (other engines). */
     send(id: string, text: string): Promise<void>
     /** Answers an approval card. `always` also allows this kind of action for the rest of the session. */

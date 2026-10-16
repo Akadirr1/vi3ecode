@@ -674,5 +674,12 @@
   "… {n} more lines not shown": "… {n} satır daha gösterilmiyor",
   "≈{n} tokens / turn": "≈{n} token / tur",
   "From the project files, not allowed on this machine yet: {list}. Until you allow it, Full access runs as Edits and auto-approve stays off.": "Proje dosyalarından geldi, bu makinede henüz izin verilmedi: {list}. İzin verene kadar Tam erişim Düzenleme olarak çalışır, oto-onay kapalı kalır.",
-  "Allow on this machine": "Bu makinede izin ver"
+  "Allow on this machine": "Bu makinede izin ver",
+  "Run mode: {mode}": "Çalışma modu: {mode}",
+  "Choose how this message runs": "Bu mesajın nasıl çalışacağını seç",
+  "Build": "Build",
+  "Plan": "Plan",
+  "Let the agent inspect, edit, and run the project with your approval policy.": "Ajanın onay politikanla projeyi incelemesine, düzenlemesine ve çalıştırmasına izin ver.",
+  "Analyze in read-only mode and produce an implementation plan.": "Salt okunur modda analiz et ve bir uygulama planı oluştur.",
+  "Back to Build": "Build'e dön"
 }

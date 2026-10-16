@@ -85,7 +85,7 @@ Bizdeki kanıt = dosya yolu (testler `tests/*.test.ts`).
 | Markdown | react-markdown, mermaid, katex | react-markdown + GFM; mermaid/katex yok | ≈ | `components/Prose.tsx` |
 | Kota göstergesi | Claude (`rate_limit_event`+`/usage`), Codex, Kimi, opencode Go | Yalnız Claude `rate_limit_event` → motor listesinde rozet | ≈ | `bin §2.3`; `engines/index.ts` `setUsage` |
 | `+` menüsü | Dosya/klasör, araçlar, görsel yapıştırma, ekran görüntüsü | `@yol` ekleme (motor dosyayı kendi okur); tarayıcı ekran görüntüsü Browser panelinden gelir. Görsel ekleme yok | ≈ | `shots/c3-plus-menu.png`; `chat/Composer.tsx` `PlusMenu` |
-| Çalışma modları Build/Plan/Goal, Worktree seçici | Var | Yok (Plan ≈ Read-only modu). Worktree bölüm 5'te | ➖ | `spec §3.4` |
+| Çalışma modları Build/Plan/Goal, Worktree seçici | Composer'da "Bu mesajın nasıl çalışacağını seç"; Plan salt okunur analiz + plan; Claude/Codex: Build/Plan/Goal, Cursor/Antigravity: Build/Plan | Composer'da aynı etiketlerle Build/Plan (Claude, Codex, Cursor). Plan turu salt okunur çalışır (Claude: `dontAsk` + yazma araçları kapalı; Codex `-s read-only`; Cursor yalnız talimatla), plandan sonraki ilk Build turuna "plan mode has ended" notu eklenir. Goal yok. Worktree bölüm 5'te | ≈ | `bundle/en-dict` `sessionChat.workspace.runMode`; `shared/runMode.ts`, `chat/Composer.tsx` `RunModeMenu`, `chat.ts` `approvalFor` |
 | Thread listesi | Sabitleme, arşiv, dışa aktarma, karşılaştırma, gruplama | Liste + silme; başlık tıklanınca yeniden adlandırma. Pin/arşiv/arama yok | ≈ | `ChatSidebar.tsx` |
 | Direct Chat (projesiz), sohbeti dallandırma (Codex fork), özetleme | Var | Yok. Sohbet projeye bağlı | ➖ | `bin §2.4` |
 | Dikte, Voice Chat | Var | Yok (bölüm 14) | ➖ | |

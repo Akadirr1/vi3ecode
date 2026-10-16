@@ -11,6 +11,7 @@ import { withHistory } from '../shared/prompt'
 import { matchGuardrail } from '../shared/guardrails'
 import { getProject, getSettings, userDir } from './store'
 import { getAdapter, setUsage } from './engines'
+import { canPlan, withRunMode } from '../shared/runMode'
 import { ClaudeSession, toolDetail, type PermissionRequest } from './engines/claudeSession'
 import { runTurn, type TurnHandle } from './runner'
 import { applyMemoryWrites, listMemory } from './project'
@@ -130,8 +131,11 @@ function endTurn(s: ChatSession, r: { text: string; files: string[]; costUsd?: n
 // ---- Claude Code: persistent session ----
 
 /** What a Claude process was started with; a change takes effect on the next turn (a running one keeps steering). */
-const spawnSig = (s: ChatSession) => [s.approval === 'read-only', s.model, s.effort, getSettings().guardrails, getSettings().browserTools].join('|')
+const spawnSig = (s: ChatSession) => [approvalFor(s) === 'read-only', s.model, s.effort, getSettings().guardrails, getSettings().browserTools].join('|')
 const sigs = new Map<string, string>()
+
+/** Plan run mode turns the chat read-only on engines that support it. */
+const approvalFor = (s: ChatSession): ApprovalMode => (s.runMode === 'plan' && canPlan(s.engine) ? 'read-only' : s.approval)
 
 function claudeFor(s: ChatSession): ClaudeSession {
   const existing = claude.get(s.id)
@@ -141,14 +145,14 @@ function claudeFor(s: ChatSession): ClaudeSession {
   const cwd = getProject(s.projectId).path
   const cs: ClaudeSession = new ClaudeSession({
     cwd,
-    approval: s.approval,
+    approval: approvalFor(s),
     model: s.model,
     effort: s.effort,
     resumeId: s.engineSessionId,
     mcpConfig: mcpConfigJson(s.projectId),
     guarded: getSettings().guardrails,
     // Looking is always allowed; acting on the page too, except for read-only (the user watches the same panel).
-    allowedTools: getSettings().browserTools ? [...BROWSER_READ_TOOLS, ...(s.approval === 'read-only' ? [] : BROWSER_ACT_TOOLS)] : undefined,
+    allowedTools: getSettings().browserTools ? [...BROWSER_READ_TOOLS, ...(approvalFor(s) === 'read-only' ? [] : BROWSER_ACT_TOOLS)] : undefined,
     onTurnStart: () => {
       if (!active.has(s.id)) newAssistant(s)
       push(s, true)
@@ -168,7 +172,7 @@ function claudeFor(s: ChatSession): ClaudeSession {
     onRateLimit: (info) => setUsage('claude', info),
     onPermission: (req) => {
       const rule = getSettings().guardrails ? matchGuardrail(req.toolName, req.input) : null
-      if (!rule && s.approval !== 'read-only' && (s.autoApprove || s.approval === 'full')) return cs.respond(req.id, req, true)
+      if (!rule && approvalFor(s) !== 'read-only' && (s.autoApprove || s.approval === 'full')) return cs.respond(req.id, req, true)
       requests.set(req.id, { sessionId: s.id, req, cs })
       s.pending.push({ id: req.id, tool: req.tool, detail: describe(req, cwd), ts: Date.now(), ...(rule ? { guardrail: rule.title } : {}) })
       notify(`${s.title}: approval needed`, `${req.tool} ${describe(req, cwd)}`)
@@ -236,11 +240,12 @@ function startTurn(s: ChatSession, userMsg: ChatMessage): void {
   }
   const history = s.messages.slice(0, s.messages.indexOf(userMsg))
   const canResume = !!(adapter.resumes && s.engineSessionId)
-  const prompt = canResume ? userMsg.text : withHistory(history, userMsg.text)
+  const text = withRunMode(userMsg, history)
+  const prompt = canResume ? text : withHistory(history, text)
   const handle = runTurn(
     adapter,
     project.path,
-    { prompt, system: systemText(s.projectId), model: s.model, effort: s.effort, approval: s.approval, resumeId: canResume ? s.engineSessionId : undefined, mcpConfig: mcpConfigJson(s.projectId) },
+    { prompt, system: systemText(s.projectId), model: s.model, effort: s.effort, approval: userMsg.mode === 'plan' ? 'read-only' : s.approval, resumeId: canResume ? s.engineSessionId : undefined, mcpConfig: mcpConfigJson(s.projectId) },
     (e) => {
       if (e.type === 'text') {
         msg.text += e.delta || !msg.text ? e.text : `\n\n${e.text}`
@@ -307,14 +312,16 @@ export const chatApi = {
       s.engine = patch.engine
       s.engineSessionId = undefined // the new engine starts fresh; history is replayed in the prompt
     }
-    if (patch.approval !== undefined) {
-      const next: ApprovalMode = approvalOf(patch.approval, s.approval)
-      const cs = claude.get(id)
-      // read-only also removes tools from the process, so crossing it needs a fresh process.
-      // A busy one switches mode now and is replaced after the turn (claudeFor compares spawnSig).
-      if (cs && (next === 'read-only') !== (s.approval === 'read-only') && !cs.busy) closeClaude(id)
-      else cs?.setApproval(next)
-      s.approval = next
+    const was = approvalFor(s)
+    if (patch.approval !== undefined) s.approval = approvalOf(patch.approval, s.approval)
+    if ('runMode' in patch) s.runMode = patch.runMode === 'plan' ? 'plan' : undefined
+    const now = approvalFor(s)
+    const cs = claude.get(id)
+    // read-only also removes tools from the process, so crossing it needs a fresh process.
+    // A busy one switches mode now and is replaced after the turn (claudeFor compares spawnSig).
+    if (cs && now !== was) {
+      if ((now === 'read-only') !== (was === 'read-only') && !cs.busy) closeClaude(id)
+      else cs.setApproval(now)
     }
     for (const k of ['model', 'effort'] as const) {
       if (k in patch && patch[k] !== s[k]) {
@@ -325,7 +332,7 @@ export const chatApi = {
     }
     if (typeof patch.autoApprove === 'boolean') {
       s.autoApprove = patch.autoApprove
-      if (s.autoApprove && s.approval !== 'read-only') for (const p of s.pending.filter((x) => !x.guardrail)) await chatApi.respond(id, p.id, true)
+      if (s.autoApprove && approvalFor(s) !== 'read-only') for (const p of s.pending.filter((x) => !x.guardrail)) await chatApi.respond(id, p.id, true)
     }
     save(s)
     push(s, true)
@@ -335,7 +342,7 @@ export const chatApi = {
     const s = get(id)
     const body = String(text ?? '').trim()
     if (!body) return
-    const msg: ChatMessage = { id: randomUUID(), role: 'user', text: body.slice(0, 200_000), ts: Date.now() }
+    const msg: ChatMessage = { id: randomUUID(), role: 'user', text: body.slice(0, 200_000), ts: Date.now(), ...(s.runMode === 'plan' && canPlan(s.engine) ? { mode: 'plan' as const } : {}) }
     const history = s.messages.slice()
     s.messages.push(msg)
     if (s.title === 'New chat') s.title = body.split('\n')[0].slice(0, 60)
@@ -344,12 +351,14 @@ export const chatApi = {
       const cs = claudeFor(s)
       const fresh = cs !== before
       if (cs.busy) {
-        msg.status = 'steered' // folded into the running turn
+        msg.status = 'steered' // folded into the running turn, in whatever mode that turn runs
+        delete msg.mode
         cs.send(msg.text)
       } else {
         const sys = systemText(s.projectId)
+        const text = withRunMode(msg, history)
         // A new process without a resumable session has no context: replay what the user saw.
-        const prompt = fresh && !s.engineSessionId ? withHistory(history, msg.text) : msg.text
+        const prompt = fresh && !s.engineSessionId ? withHistory(history, text) : text
         cs.send(sys ? `${sys}\n\n---\n\n${prompt}` : prompt)
       }
       save(s)
@@ -372,7 +381,7 @@ export const chatApi = {
     s.pending = s.pending.filter((p) => p.id !== approvalId)
     requests.delete(approvalId)
     if (r && r.sessionId === id) {
-      if (r.cs.alive) r.cs.respond(approvalId, r.req, !!allow && s.approval !== 'read-only', !!always)
+      if (r.cs.alive) r.cs.respond(approvalId, r.req, !!allow && approvalFor(s) !== 'read-only', !!always)
       record({ source: 'chat', kind: allow ? 'approval-allowed' : 'approval-denied', outcome: 'info', projectId: s.projectId, engine: s.engine })
     }
     push(s, true)

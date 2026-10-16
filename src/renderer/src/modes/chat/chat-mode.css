@@ -421,6 +421,22 @@
   color: var(--text);
 }
 
+.cm-runmode {
+  display: inline-flex;
+  align-items: center;
+}
+
+.cm-runmode .cm-pill.on {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.cm-runmode-clear {
+  width: 22px;
+  height: 22px;
+  margin-left: -2px;
+}
+
 .cm-engine-btn b {
   color: var(--text);
   font-weight: 600;

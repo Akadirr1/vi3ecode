@@ -22,7 +22,8 @@ Side-by-side details: [MAPPING.md](MAPPING.md).
 - [x] Token streaming, "N steps" with tool arguments, time / cost / engine footer, markdown
 - [x] History replay when switching engines; resume with the engine's own session id
 - [~] Codex approvals and steering: Codex runs through `codex exec` (sandboxed); the original uses `codex app-server`
-- [ ] Voice input, chat compare / archive / export, auto engine routing
+- [x] Run mode Build / Plan in the composer (Plan = read-only turn that ends in a plan; Claude, Codex, Cursor)
+- [ ] Goal run mode, voice input, chat compare / archive / export, auto engine routing
 
 ## Agent Mode
 

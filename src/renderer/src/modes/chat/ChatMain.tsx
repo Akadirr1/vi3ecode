@@ -77,8 +77,8 @@ export function ChatMain() {
 
   const defaultEngine = usable.find((e) => e.id === settings.defaultEngine)?.id ?? usable[0]?.id ?? settings.defaultEngine
   const cfg: ChatConfig = session
-    ? { engine: session.engine, model: session.model ?? '', effort: session.effort ?? '', approval: session.approval, autoApprove: session.autoApprove }
-    : { engine: fresh.engine ?? defaultEngine, model: fresh.model ?? '', effort: fresh.effort ?? '', approval: fresh.approval ?? settings.approval, autoApprove: fresh.autoApprove ?? false }
+    ? { engine: session.engine, model: session.model ?? '', effort: session.effort ?? '', approval: session.approval, autoApprove: session.autoApprove, runMode: session.runMode ?? '' }
+    : { engine: fresh.engine ?? defaultEngine, model: fresh.model ?? '', effort: fresh.effort ?? '', approval: fresh.approval ?? settings.approval, autoApprove: fresh.autoApprove ?? false, runMode: fresh.runMode ?? '' }
   const setCfg = (patch: Partial<ChatConfig>) => {
     if (session) void api.chat.update(session.id, patch).then(setSession, fail)
     else setFresh((f) => ({ ...f, ...patch }))
@@ -238,6 +238,11 @@ function Message({ m }: { m: ChatMessage }) {
     return (
       <div className="cm-user">
         <div className="cm-bubble">{m.text}</div>
+        {m.mode === 'plan' ? (
+          <span className="badge" title={t('Analyze in read-only mode and produce an implementation plan.')}>
+            {t('Plan')}
+          </span>
+        ) : null}
         {tag}
       </div>
     )

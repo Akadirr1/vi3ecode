@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { ArrowUp, Check, ChevronDown, ChevronRight, Lock, Paperclip, Plus, Shield, ShieldAlert, ShieldCheck, Square } from 'lucide-react'
+import { ArrowUp, Check, ChevronDown, ChevronRight, Hammer, ListChecks, Lock, Paperclip, Plus, Shield, ShieldAlert, ShieldCheck, Square, X } from 'lucide-react'
 import type { ApprovalMode, EngineId, FileEntry } from '../../../../shared/types'
 import { api } from '../../api'
 import { useApp, usableEngines } from '../../context'
 import { EngineIcon } from '../../components/EngineIcon'
 import { APPROVAL_LABEL } from '../../components/format'
 import { t } from '../../i18n'
+import { canPlan } from '../../../../shared/runMode'
 
 /** What the composer controls; '' model/effort means the engine's default. */
 export interface ChatConfig {
@@ -14,6 +15,8 @@ export interface ChatConfig {
   effort: string
   approval: ApprovalMode
   autoApprove: boolean
+  /** '' = Build. */
+  runMode: '' | 'plan'
 }
 
 const APPROVALS: [ApprovalMode, typeof Shield][] = [
@@ -73,6 +76,7 @@ export function Composer(p: {
           {t('Auto-approve')}
         </button>
         <ApprovalMenu value={p.cfg.approval} onChange={(approval) => p.setCfg({ approval })} />
+        {canPlan(p.cfg.engine) ? <RunModeMenu value={p.cfg.runMode} onChange={(runMode) => p.setCfg({ runMode })} /> : null}
         <span className="grow" />
         <EnginePicker cfg={p.cfg} setCfg={p.setCfg} />
         <button
@@ -205,6 +209,52 @@ function ApprovalMenu({ value, onChange }: { value: ApprovalMode; onChange(m: Ap
                 <span className="cm-opt-hint">{t(APPROVAL_LABEL[m].hint)}</span>
               </span>
               {m === value ? <Check size={15} aria-hidden /> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+const RUN_MODES = [
+  { mode: '' as const, label: 'Build', hint: 'Let the agent inspect, edit, and run the project with your approval policy.', Icon: Hammer },
+  { mode: 'plan' as const, label: 'Plan', hint: 'Analyze in read-only mode and produce an implementation plan.', Icon: ListChecks }
+]
+
+/** Build / Plan for the next messages; in Plan the pill carries an × back to Build. */
+function RunModeMenu({ value, onChange }: { value: '' | 'plan'; onChange(m: '' | 'plan'): void }) {
+  const pop = usePopover()
+  const cur = RUN_MODES.find((m) => m.mode === value) ?? RUN_MODES[0]
+  return (
+    <div className="cm-pop-wrap cm-runmode" ref={pop.ref}>
+      <button
+        className={`cm-pill${value ? ' on' : ''}`}
+        onClick={() => pop.setOpen(!pop.open)}
+        aria-haspopup="menu"
+        aria-expanded={pop.open}
+        aria-label={t('Run mode: {mode}', { mode: t(cur.label) })}
+      >
+        <cur.Icon size={15} aria-hidden />
+        {t(cur.label)}
+        {value ? null : <ChevronDown size={14} aria-hidden />}
+      </button>
+      {value ? (
+        <button className="iconbtn cm-runmode-clear" onClick={() => onChange('')} title={t('Back to Build')} aria-label={t('Back to Build')}>
+          <X size={13} />
+        </button>
+      ) : null}
+      {pop.open ? (
+        <div className="cm-pop cm-approvals" role="menu" aria-label={t('Choose how this message runs')}>
+          <div className="cm-pop-title micro">{t('Choose how this message runs')}</div>
+          {RUN_MODES.map(({ mode, label, hint, Icon }) => (
+            <button key={mode || 'build'} role="menuitemradio" aria-checked={mode === value} className="cm-opt" autoFocus={mode === value} onClick={() => (onChange(mode), pop.setOpen(false))}>
+              <Icon size={15} aria-hidden />
+              <span className="grow">
+                <span className="cm-opt-label">{t(label)}</span>
+                <span className="cm-opt-hint">{t(hint)}</span>
+              </span>
+              {mode === value ? <Check size={15} aria-hidden /> : null}
             </button>
           ))}
         </div>
