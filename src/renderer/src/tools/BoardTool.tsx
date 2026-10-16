@@ -27,6 +27,8 @@ const cardText = (c: KanbanCard, sep: string) => [c.title, c.body].filter(Boolea
 
 // Default columns keep their meaning colour; custom ones cycle through the palette.
 const COL_COLOR: Record<string, string> = { backlog: '#94a3b8', todo: '#38bdf8', 'in-progress': '#fbbf24', doing: '#fbbf24', review: '#a78bfa', done: '#34d399' }
+// vi3ecode stores colour names in kanban.json.
+const NAMED: Record<string, string> = { slate: '#94a3b8', sky: '#38bdf8', amber: '#fbbf24', violet: '#a78bfa', rose: '#fb7185', emerald: '#34d399' }
 const PALETTE = ['#94a3b8', '#38bdf8', '#f59e0b', '#a78bfa', '#34d399', '#fb7185']
 const colColor = (id: string, i: number) => COL_COLOR[id] ?? PALETTE[i % PALETTE.length]
 
@@ -171,7 +173,7 @@ export function BoardTool({ docked }: { docked: boolean }) {
         {board.columns.map((col, ci) => (
           <section key={col.id} className="kb-col" aria-label={col.title}>
             <div className="kb-col-head">
-              <span className="dot" style={{ background: col.color ?? colColor(col.id, ci) }} aria-hidden />
+              <span className="dot" style={{ background: (col.color && (NAMED[col.color] ?? col.color)) || colColor(col.id, ci) }} aria-hidden />
               {/* Committed on blur: saving an empty title mid-edit would come back as "Untitled". */}
               <input
                 key={col.title}

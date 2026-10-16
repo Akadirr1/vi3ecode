@@ -304,6 +304,24 @@ function Memory() {
           {s.memoryWriteBack ? t('On') : t('Off')}
         </button>
       </div>
+      <div className="set-switch-row">
+        <div className="grow">
+          <div className="set-field-label">{t('Guardrails')}</div>
+          <div className="set-field-hint">{t('Database drops, forced deletes, destructive git and dangerous system commands always ask first, even under Full access or AUTO-APPROVE.')}</div>
+        </div>
+        <button className="switch" aria-pressed={s.guardrails} aria-label={t('Guardrails')} onClick={() => void setSettings({ guardrails: !s.guardrails })}>
+          {s.guardrails ? t('On') : t('Off')}
+        </button>
+      </div>
+      <div className="set-switch-row">
+        <div className="grow">
+          <div className="set-field-label">{t('Browser tools for engines')}</div>
+          <div className="set-field-hint">{t('Engines can open pages in the browser panel, read them, take screenshots, click and type. Read-only agents can only look.')}</div>
+        </div>
+        <button className="switch" aria-pressed={s.browserTools} aria-label={t('Browser tools for engines')} onClick={() => void setSettings({ browserTools: !s.browserTools })}>
+          {s.browserTools ? t('On') : t('Off')}
+        </button>
+      </div>
     </Group>
   )
 }
@@ -336,7 +354,7 @@ function Projects() {
           <span>
             <span className="set-mono set-path">{project.path}/.vi3ecode/</span>
             <span className="set-field-hint">
-              {t('Task board (kanban.json), notepad (notes.json), agent team (team.json) and the memory vault (memory/*.md). It travels with your commits.')}
+              {t('Task board (kanban.json), notepad (notes.json), agent team (agents.json), skills, plugins and the memory vault (memory/entries). It travels with your commits.')}
             </span>
           </span>
           <span className="micro">{t('This machine')}</span>

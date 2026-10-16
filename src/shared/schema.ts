@@ -60,11 +60,11 @@ export function sanitizeSettings(patch: unknown, base: Settings = DEFAULT_SETTIN
 export const DEFAULT_BOARD: Kanban = {
   version: 1,
   columns: [
-    { id: 'backlog', title: 'Backlog', color: '#94a3b8', cards: [] },
-    { id: 'todo', title: 'To do', color: '#38bdf8', cards: [] },
-    { id: 'in-progress', title: 'In progress', color: '#fbbf24', cards: [] },
-    { id: 'review', title: 'Review', color: '#a78bfa', cards: [] },
-    { id: 'done', title: 'Done', color: '#34d399', cards: [] }
+    { id: 'backlog', title: 'Backlog', color: 'slate', cards: [] },
+    { id: 'todo', title: 'Todo', color: 'sky', cards: [] },
+    { id: 'in-progress', title: 'In Progress', color: 'amber', cards: [] },
+    { id: 'review', title: 'Review', color: 'violet', cards: [] },
+    { id: 'done', title: 'Done', color: 'emerald', cards: [] }
   ]
 }
 
@@ -73,7 +73,8 @@ export function sanitizeBoard(raw: unknown): Kanban {
   const columns = raw.columns.filter(isObj).slice(0, 20).map((c, ci) => ({
     id: id(c.id, ci),
     title: str(c.title, 80) || 'Untitled',
-    ...(/^#[0-9a-fA-F]{6}$/.test(str(c.color)) ? { color: str(c.color) } : {}),
+    // vi3ecode's colour names, or #rrggbb.
+    ...(/^(#[0-9a-fA-F]{6}|slate|sky|amber|violet|rose|emerald)$/.test(str(c.color)) ? { color: str(c.color) } : {}),
     cards: (Array.isArray(c.cards) ? c.cards : []).filter(isObj).slice(0, 500).map(
       (k, ki): KanbanCard => ({
         id: id(k.id, ki),

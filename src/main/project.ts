@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import type { Kanban, MemoryNote, Notes, Team } from '../shared/types'
 import { MEMORY_TYPES } from '../shared/types'
 import { sanitizeBoard, sanitizeNotes, sanitizeTeam } from '../shared/schema'
-import { boardFromDisk, boardToDisk, teamFromDisk, teamToDisk } from '../shared/formats'
+import { boardFromDisk, boardToDisk, notesFromDisk, notesToDisk, teamFromDisk, teamToDisk } from '../shared/formats'
 import { buildIndex, extractLinks, parseMemoryWrites, parseNote, serializeNote, slugify, SLUG_RE } from '../shared/memory'
 import { getProject } from './store'
 import { readJson, writeFileAtomic, writeJson } from './fsutil'
@@ -17,18 +17,20 @@ export const boardApi = {
   },
   async save(projectId: string, board: Kanban): Promise<Kanban> {
     const clean = sanitizeBoard(board)
-    writeJson(dataDir(projectId, 'kanban.json'), boardToDisk(clean, projectId))
+    const file = dataDir(projectId, 'kanban.json')
+    writeJson(file, boardToDisk(clean, projectId, readJson(file, null)))
     return clean
   }
 }
 
 export const notesApi = {
   async get(projectId: string): Promise<Notes> {
-    return sanitizeNotes(readJson(dataDir(projectId, 'notes.json'), null))
+    return notesFromDisk(readJson(dataDir(projectId, 'notes.json'), null))
   },
   async save(projectId: string, notes: Notes): Promise<Notes> {
     const clean = sanitizeNotes(notes)
-    writeJson(dataDir(projectId, 'notes.json'), clean)
+    const file = dataDir(projectId, 'notes.json')
+    writeJson(file, notesToDisk(clean, projectId, readJson(file, null)))
     return clean
   }
 }
@@ -41,7 +43,8 @@ export function readTeam(projectId: string): Team {
 
 export function writeTeam(projectId: string, team: Team): Team {
   const clean = sanitizeTeam(team)
-  writeJson(dataDir(projectId, 'agents.json'), teamToDisk(clean, projectId))
+  const file = dataDir(projectId, 'agents.json')
+  writeJson(file, teamToDisk(clean, projectId, readJson(file, null)))
   return clean
 }
 

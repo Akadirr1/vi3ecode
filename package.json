@@ -46,7 +46,7 @@
   },
   "homepage": "https://vi3ecode.com",
   "build": {
-    "appId": "com.vi3ecode.desktop",
+    "appId": "dev.vi3ecode.desktop",
     "productName": "vi3ecode",
     "directories": {
       "output": "release",

@@ -78,7 +78,7 @@ export function PluginsTool(_: { docked: boolean }) {
                   {p.active ? t('Active') : t('Off')}
                 </button>
               </div>
-              <p className="muted small xt-desc">{p.description}</p>
+              <p className="muted small xt-desc">{t(p.description)}</p>
               <div className="row xt-perms">
                 {p.permissions.map((perm) => {
                   const { short, long, icon: PIcon } = PERMS[perm]
@@ -100,7 +100,7 @@ export function PluginsTool(_: { docked: boolean }) {
               {p.active ? (
                 <div className="xt-engines small">
                   <span className="dot on" aria-hidden />
-                  {t('Active for this project · Claude Code chats and agent turns get its tools; other engines not yet.')}
+                  {t('Active for this project · Claude Code and Codex get its tools from their next turn.')}
                 </div>
               ) : null}
             </article>
@@ -151,7 +151,7 @@ function ConfirmActivate({ plugin, projectName, onCancel, onConfirm }: { plugin:
           <p className="muted small">
             {t('npx downloads the package from npm the first time an engine starts it. It runs with your user account’s rights: the list above is what the plugin declares, not a sandbox.')}
           </p>
-          <p className="muted small">{t('Claude Code chats and agent turns in this project get its tools from their next turn. Other engines do not receive plugins yet.')}</p>
+          <p className="muted small">{t('Claude Code and Codex chats, agent turns and flow steps in this project get its tools from their next turn.')}</p>
         </div>
         <div className="modal-foot">
           <div className="grow" />
