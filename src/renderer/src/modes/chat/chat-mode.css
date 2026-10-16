@@ -24,18 +24,61 @@
   padding-right: 18px;
 }
 
-.cs-del {
+.cs-row .cs-more {
   position: absolute;
   top: 5px;
   right: 5px;
-  width: 22px;
-  height: 22px;
   opacity: 0;
 }
 
-.cs-row:hover .cs-del,
-.cs-del:focus-visible {
+.cs-row .cs-more.open {
+  z-index: 30;
+}
+
+.cs-more .iconbtn {
+  width: 22px;
+  height: 22px;
+}
+
+.cs-row:hover .cs-more,
+.cs-more.open,
+.cs-more:focus-within {
   opacity: 1;
+}
+
+.cm-pop.cs-menu {
+  top: calc(100% + 4px);
+  bottom: auto;
+  left: auto;
+  right: 0;
+  width: 176px;
+}
+
+.cs-item {
+  align-items: center;
+}
+
+.cs-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cs-pin {
+  flex: none;
+  transform: rotate(-45deg);
+  color: var(--accent);
+  fill: var(--accent);
+}
+
+.cs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .cm-spin {
@@ -442,6 +485,33 @@
   font-weight: 600;
 }
 
+.cm-pop .cm-auto-ico,
+.cm-pill .cm-auto-ico {
+  color: var(--accent);
+}
+
+.cm-auto-status {
+  display: flex;
+  flex-direction: column;
+  max-width: 200px;
+  padding: 3px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.cm-auto-status > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cm-auto-reason {
+  color: var(--text-3);
+}
+
 .cm-engine-meta {
   max-width: 240px;
   overflow: hidden;
@@ -549,6 +619,17 @@
 .cm-opt:focus-visible,
 .cm-opt.on {
   background: var(--accent-soft);
+}
+
+.cm-opt.danger,
+.cm-opt.danger > svg {
+  color: var(--danger);
+}
+
+.cm-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--line);
 }
 
 .cm-opt:disabled {

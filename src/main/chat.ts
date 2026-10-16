@@ -4,14 +4,16 @@
 // messages sent mid-turn.
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import type { ApprovalMode, ChatMessage, ChatSession, ChatSummary, EngineId } from '../shared/types'
 import { approvalOf, ENGINE_IDS } from '../shared/schema'
 import { buildBrief, WRITE_BACK_INSTRUCTION } from '../shared/memory'
 import { withHistory } from '../shared/prompt'
 import { matchGuardrail } from '../shared/guardrails'
 import { getProject, getSettings, userDir } from './store'
-import { getAdapter, setUsage } from './engines'
+import { enginesApi, getAdapter, setUsage } from './engines'
 import { canPlan, withRunMode } from '../shared/runMode'
+import { classifierOf, classifierPrompt, FALLBACK, parseClassification, pickRoute, ROUTES } from '../shared/route'
 import { ClaudeSession, toolDetail, type PermissionRequest } from './engines/claudeSession'
 import { runTurn, type TurnHandle } from './runner'
 import { applyMemoryWrites, listMemory } from './project'
@@ -31,6 +33,9 @@ const claude = new Map<string, ClaudeSession>()
 const active = new Map<string, ChatMessage>()
 /** Open permission requests, by approval id. */
 const requests = new Map<string, { sessionId: string; req: PermissionRequest; cs: ClaudeSession }>()
+/** Chats whose Auto classifier is running, and the route the next assistant message gets. */
+const routing = new Set<string>()
+const routes = new Map<string, NonNullable<ChatMessage['route']>>()
 let loaded = false
 
 registerLive('workingChats', () => active.size)
@@ -55,6 +60,7 @@ function loadAll(): void {
     for (const m of s.messages) if (m.status === 'running' || m.status === 'queued') m.status = 'stopped'
     s.approval = approvalOf(s.approval, 'ask')
     s.autoApprove = s.autoApprove === true
+    s.auto = s.auto === true
     s.pending = []
     sessions.set(s.id, s)
   }
@@ -104,7 +110,9 @@ function systemText(projectId: string): string | undefined {
 }
 
 function newAssistant(s: ChatSession): ChatMessage {
-  const msg: ChatMessage = { id: randomUUID(), role: 'assistant', text: '', ts: Date.now(), engine: s.engine, model: s.model, tools: [], files: [], status: 'running' }
+  const route = routes.get(s.id)
+  routes.delete(s.id)
+  const msg: ChatMessage = { id: randomUUID(), role: 'assistant', text: '', ts: Date.now(), engine: s.engine, model: s.model, tools: [], files: [], status: 'running', ...(route ? { route } : {}) }
   s.messages.push(msg)
   active.set(s.id, msg)
   return msg
@@ -271,13 +279,30 @@ function startTurn(s: ChatSession, userMsg: ChatMessage): void {
 
 const isBusy = (id: string) => active.has(id) || running.has(id)
 
+/** Auto: the cheapest available model classifies the message, then the best-scoring route takes the turn (switched through update). */
+async function autoRoute(s: ChatSession, text: string): Promise<NonNullable<ChatMessage['route']>> {
+  const engines = await enginesApi.list()
+  const ready = (id: EngineId) => engines.some((e) => e.id === id && e.installed && e.enabled && e.headless) && (s.runMode !== 'plan' || canPlan(id))
+  const cands = ROUTES.filter((r) => ready(r.engine)).map((r) => ({ ...r, efforts: getAdapter(r.engine).efforts }))
+  const c = classifierOf(cands)
+  if (!c) throw new Error('Auto found no available engine. Enable or sign in to Claude or Codex, or pick a model manually.')
+  const h = runTurn(getAdapter(c.engine), tmpdir(), { prompt: classifierPrompt(text), model: c.model, effort: 'low', approval: 'read-only' })
+  const timer = setTimeout(h.stop, 20_000) // the original's timeout is not known
+  const r = await h.done
+  clearTimeout(timer)
+  const parsed = parseClassification(r.text)
+  const cls = parsed ?? FALLBACK
+  await chatApi.update(s.id, pickRoute(cands, cls, s)!)
+  return { reason: cls.reason || `${cls.taskKind} · ${cls.complexity}`, ...(parsed ? {} : { fallback: true }) }
+}
+
 export const chatApi = {
   async list(projectId: string): Promise<ChatSummary[]> {
     loadAll()
     return [...sessions.values()]
       .filter((s) => s.projectId === projectId)
       .sort((a, b) => b.updatedAt - a.updatedAt)
-      .map((s) => ({ id: s.id, title: s.title, engine: s.engine, model: s.model, updatedAt: s.updatedAt, running: isBusy(s.id) }))
+      .map((s) => ({ id: s.id, title: s.title, engine: s.engine, model: s.model, updatedAt: s.updatedAt, running: isBusy(s.id), pinned: s.pinned }))
   },
   async get(id: string): Promise<ChatSession | null> {
     loadAll()
@@ -303,7 +328,7 @@ export const chatApi = {
     save(s)
     return s
   },
-  async update(id: string, patch: Partial<Pick<ChatSession, 'title' | 'engine' | 'approval' | 'model' | 'effort' | 'autoApprove'>>): Promise<ChatSession> {
+  async update(id: string, patch: Partial<Pick<ChatSession, 'title' | 'engine' | 'approval' | 'model' | 'effort' | 'autoApprove' | 'auto' | 'pinned'>>): Promise<ChatSession> {
     const s = get(id)
     if (typeof patch.title === 'string' && patch.title.trim()) s.title = patch.title.trim().slice(0, 120)
     if (patch.engine && ENGINE_IDS.includes(patch.engine) && patch.engine !== s.engine) {
@@ -330,6 +355,8 @@ export const chatApi = {
         s[k] = v
       }
     }
+    if (typeof patch.auto === 'boolean') s.auto = patch.auto
+    if (typeof patch.pinned === 'boolean') s.pinned = patch.pinned
     if (typeof patch.autoApprove === 'boolean') {
       s.autoApprove = patch.autoApprove
       if (s.autoApprove && approvalFor(s) !== 'read-only') for (const p of s.pending.filter((x) => !x.guardrail)) await chatApi.respond(id, p.id, true)
@@ -342,10 +369,25 @@ export const chatApi = {
     const s = get(id)
     const body = String(text ?? '').trim()
     if (!body) return
-    const msg: ChatMessage = { id: randomUUID(), role: 'user', text: body.slice(0, 200_000), ts: Date.now(), ...(s.runMode === 'plan' && canPlan(s.engine) ? { mode: 'plan' as const } : {}) }
+    if (routing.has(id)) throw new Error('Auto is still choosing an engine…')
+    const msg: ChatMessage = { id: randomUUID(), role: 'user', text: body.slice(0, 200_000), ts: Date.now() }
     const history = s.messages.slice()
     s.messages.push(msg)
     if (s.title === 'New chat') s.title = body.split('\n')[0].slice(0, 60)
+    if (s.auto && !isBusy(id)) {
+      routing.add(id)
+      push(s, true)
+      try {
+        routes.set(id, await autoRoute(s, msg.text))
+      } catch (e) {
+        s.messages = s.messages.filter((m) => m !== msg) // the renderer puts the text back in the composer
+        push(s, true)
+        throw e
+      } finally {
+        routing.delete(id)
+      }
+    }
+    if (s.runMode === 'plan' && canPlan(s.engine)) msg.mode = 'plan' // after routing: Auto may switch the engine
     if (s.engine === 'claude') {
       const before = claude.get(id)
       const cs = claudeFor(s)
@@ -411,6 +453,7 @@ export const chatApi = {
     claude.get(id)?.kill()
     claude.delete(id)
     active.delete(id)
+    routes.delete(id)
     sessions.delete(id)
     rmSync(file(id), { force: true })
   }

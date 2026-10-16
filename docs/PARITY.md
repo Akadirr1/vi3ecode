@@ -23,7 +23,10 @@ Side-by-side details: [MAPPING.md](MAPPING.md).
 - [x] History replay when switching engines; resume with the engine's own session id
 - [~] Codex approvals and steering: Codex runs through `codex exec` (sandboxed); the original uses `codex app-server`
 - [x] Run mode Build / Plan in the composer (Plan = read-only turn that ends in a plan; Claude, Codex, Cursor)
-- [ ] Goal run mode, voice input, chat compare / archive / export, auto engine routing
+- [x] Auto engine routing: a small model (Haiku 4.5 / GPT-5.6 Luna) classifies each message, the original's route table and score pick engine · model · effort; a manual pick turns Auto off
+- [x] Thread options on chat cards: Rename, Pin / Unpin (pinned first), Delete with confirmation
+- [ ] Goal run mode, voice input, Auto model policy (allow / block lists)
+- Not in vi3ecode 0.4.5 Chat Mode: compare / archive / export (only unused `session.*` strings in its dictionary)
 
 ## Agent Mode
 

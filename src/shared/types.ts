@@ -79,6 +79,8 @@ export interface ChatMessage {
   status?: MessageStatus
   /** A user message sent in Plan run mode. */
   mode?: 'plan'
+  /** Why Auto picked this reply's engine; fallback: the task analysis failed and Auto used a balanced choice. */
+  route?: { reason: string; fallback?: boolean }
 }
 
 export interface ChatSession {
@@ -93,6 +95,10 @@ export interface ChatSession {
   autoApprove: boolean
   /** Composer run mode: Plan runs read-only and ends in a plan (engines in PLAN_ENGINES); missing means Build. */
   runMode?: 'plan'
+  /** Auto engine routing: each new turn picks the engine, model and effort for its message. */
+  auto?: boolean
+  /** Listed first in the sidebar. */
+  pinned?: boolean
   /** Engine-side session/thread id used to resume the conversation. */
   engineSessionId?: string
   messages: ChatMessage[]
@@ -109,6 +115,7 @@ export interface ChatSummary {
   model?: string
   updatedAt: number
   running: boolean
+  pinned?: boolean
 }
 
 // ---- agent mode ----
@@ -484,7 +491,7 @@ export interface Api {
     list(projectId: string): Promise<ChatSummary[]>
     get(id: string): Promise<ChatSession | null>
     create(projectId: string, engine?: EngineId): Promise<ChatSession>
-    update(id: string, patch: Partial<Pick<ChatSession, 'title' | 'engine' | 'approval' | 'model' | 'effort' | 'autoApprove'>> & { runMode?: 'plan' | '' }): Promise<ChatSession>
+    update(id: string, patch: Partial<Pick<ChatSession, 'title' | 'engine' | 'approval' | 'model' | 'effort' | 'autoApprove' | 'auto' | 'pinned'>> & { runMode?: 'plan' | '' }): Promise<ChatSession>
     /** Starts a turn. While one runs: steers it (Claude Code) or queues the text (other engines). */
     send(id: string, text: string): Promise<void>
     /** Answers an approval card. `always` also allows this kind of action for the rest of the session. */

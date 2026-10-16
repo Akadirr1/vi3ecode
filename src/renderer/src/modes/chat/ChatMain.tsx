@@ -23,6 +23,8 @@ export function ChatMain() {
   const [fresh, setFresh] = useState<Partial<ChatConfig>>({})
   const [error, setError] = useState('')
   const [editing, setEditing] = useState(false)
+  /** Chat whose Auto classifier is running. */
+  const [analyzing, setAnalyzing] = useState<string | null>(null)
   const [, redraw] = useState(0)
   const scroller = useRef<HTMLDivElement>(null)
   const input = useRef<HTMLTextAreaElement>(null)
@@ -35,7 +37,7 @@ export function ChatMain() {
     drafts.set(k, text)
     redraw((n) => n + 1)
   }
-  const fail = (e: unknown) => setError(errorText(e))
+  const fail = (e: unknown) => setError(t(errorText(e)))
 
   useEffect(() => {
     setSession((cur) => (cur && cur.id === chatId ? cur : null))
@@ -77,8 +79,8 @@ export function ChatMain() {
 
   const defaultEngine = usable.find((e) => e.id === settings.defaultEngine)?.id ?? usable[0]?.id ?? settings.defaultEngine
   const cfg: ChatConfig = session
-    ? { engine: session.engine, model: session.model ?? '', effort: session.effort ?? '', approval: session.approval, autoApprove: session.autoApprove, runMode: session.runMode ?? '' }
-    : { engine: fresh.engine ?? defaultEngine, model: fresh.model ?? '', effort: fresh.effort ?? '', approval: fresh.approval ?? settings.approval, autoApprove: fresh.autoApprove ?? false, runMode: fresh.runMode ?? '' }
+    ? { engine: session.engine, model: session.model ?? '', effort: session.effort ?? '', approval: session.approval, autoApprove: session.autoApprove, runMode: session.runMode ?? '', auto: !!session.auto }
+    : { engine: fresh.engine ?? defaultEngine, model: fresh.model ?? '', effort: fresh.effort ?? '', approval: fresh.approval ?? settings.approval, autoApprove: fresh.autoApprove ?? false, runMode: fresh.runMode ?? '', auto: fresh.auto ?? false }
   const setCfg = (patch: Partial<ChatConfig>) => {
     if (session) void api.chat.update(session.id, patch).then(setSession, fail)
     else setFresh((f) => ({ ...f, ...patch }))
@@ -101,10 +103,13 @@ export function ChatMain() {
         setSession(s)
         setChatId(s.id)
       }
+      if (cfg.auto && !busy) setAnalyzing(id) // send resolves once Auto has picked the route and the turn started
       await api.chat.send(id, text)
     } catch (e) {
       setDraftFor(id ?? newKey, text)
       fail(e)
+    } finally {
+      setAnalyzing((cur) => (cur === id ? null : cur))
     }
   }
 
@@ -204,6 +209,8 @@ export function ChatMain() {
           setDraft={(text) => setDraftFor(key, text)}
           placeholder={placeholder}
           busy={busy}
+          analyzing={!!session && analyzing === session.id}
+          routed={session?.messages.findLast((m) => m.route)}
           onSend={() => void send()}
           onStop={stop}
           inputRef={input}

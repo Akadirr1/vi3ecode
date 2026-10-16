@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { ArrowUp, Check, ChevronDown, ChevronRight, Hammer, ListChecks, Lock, Paperclip, Plus, Shield, ShieldAlert, ShieldCheck, Square, X } from 'lucide-react'
-import type { ApprovalMode, EngineId, FileEntry } from '../../../../shared/types'
+import { ArrowUp, Check, ChevronDown, ChevronRight, Hammer, ListChecks, Lock, Paperclip, Plus, Route, Shield, ShieldAlert, ShieldCheck, Square, X } from 'lucide-react'
+import type { ApprovalMode, ChatMessage, EngineId, FileEntry } from '../../../../shared/types'
 import { api } from '../../api'
 import { useApp, usableEngines } from '../../context'
 import { EngineIcon } from '../../components/EngineIcon'
@@ -17,6 +17,8 @@ export interface ChatConfig {
   autoApprove: boolean
   /** '' = Build. */
   runMode: '' | 'plan'
+  /** Auto engine routing: each message picks engine, model and effort. */
+  auto: boolean
 }
 
 const APPROVALS: [ApprovalMode, typeof Shield][] = [
@@ -35,6 +37,10 @@ export function Composer(p: {
   setDraft(text: string): void
   placeholder: string
   busy: boolean
+  /** Auto's classifier is running for the message just sent. */
+  analyzing: boolean
+  /** The last reply Auto routed. */
+  routed?: ChatMessage
   onSend(): void
   onStop(): void
   inputRef: RefObject<HTMLTextAreaElement | null>
@@ -78,7 +84,8 @@ export function Composer(p: {
         <ApprovalMenu value={p.cfg.approval} onChange={(approval) => p.setCfg({ approval })} />
         {canPlan(p.cfg.engine) ? <RunModeMenu value={p.cfg.runMode} onChange={(runMode) => p.setCfg({ runMode })} /> : null}
         <span className="grow" />
-        <EnginePicker cfg={p.cfg} setCfg={p.setCfg} />
+        <EnginePicker cfg={p.cfg} setCfg={p.setCfg} analyzing={p.analyzing} />
+        {p.cfg.auto ? <AutoStatus effort={p.cfg.effort} analyzing={p.analyzing} routed={p.routed} /> : null}
         <button
           className={`cm-send${stopMode ? ' stop' : ''}`}
           onClick={stopMode ? p.onStop : p.onSend}
@@ -108,7 +115,7 @@ export function Composer(p: {
 }
 
 /** Open state that closes on an outside click or Escape. */
-function usePopover() {
+export function usePopover() {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -263,15 +270,33 @@ function RunModeMenu({ value, onChange }: { value: '' | 'plan'; onChange(m: '' |
   )
 }
 
-/** Provider / Model / Effort rows, each opening its list to the side. */
-function EnginePicker({ cfg, setCfg }: { cfg: ChatConfig; setCfg(patch: Partial<ChatConfig>): void }) {
+const AUTO_STATES: Partial<Record<string, string>> = { running: 'Selected', done: 'Completed', error: 'Failed', stopped: 'Cancelled' }
+
+/** "Auto effort: high · Completed" and why Auto picked the route. */
+function AutoStatus({ effort, analyzing, routed }: { effort: string; analyzing: boolean; routed?: ChatMessage }) {
+  const state = analyzing ? 'Choosing' : AUTO_STATES[routed?.status ?? '']
+  if (!state) return null
+  const reason = analyzing || !routed?.route ? '' : routed.route.fallback ? t("Task analysis didn't finish, so Auto used a balanced choice.") : routed.route.reason
+  return (
+    <span className="cm-auto-status" role="status" title={reason || undefined}>
+      <span>
+        {t('Auto effort')}: {!analyzing && effort ? `${effort} · ` : ''}
+        {t(state)}
+      </span>
+      {reason ? <span className="cm-auto-reason">{reason}</span> : null}
+    </span>
+  )
+}
+
+/** Auto on top, then Provider / Model / Effort rows, each opening its list to the side. */
+function EnginePicker({ cfg, setCfg, analyzing }: { cfg: ChatConfig; setCfg(patch: Partial<ChatConfig>): void; analyzing: boolean }) {
   const ctx = useApp()
   const pop = usePopover()
   const [sub, setSub] = useState<'engine' | 'model' | 'effort' | null>(null)
   const engine = ctx.engines.find((e) => e.id === cfg.engine)
   const usable = usableEngines(ctx)
   const pick = (patch: Partial<ChatConfig>) => {
-    setCfg(patch)
+    setCfg({ auto: false, ...patch }) // a manual pick turns Auto off
     setSub(null)
     pop.setOpen(false)
   }
@@ -295,16 +320,35 @@ function EnginePicker({ cfg, setCfg }: { cfg: ChatConfig; setCfg(patch: Partial<
   return (
     <div className="cm-pop-wrap" ref={pop.ref}>
       <button className="cm-pill cm-engine-btn" onClick={() => (pop.setOpen(!pop.open), setSub(null))} aria-haspopup="menu" aria-expanded={pop.open} aria-label={t('Engine and model')}>
-        <EngineIcon engine={cfg.engine} size={15} />
-        <b>{engine?.label ?? cfg.engine}</b>
-        <span className="cm-engine-meta">
-          · {cfg.model || t('Default')}
-          {cfg.effort ? ` · ${cfg.effort}` : ''}
-        </span>
+        {cfg.auto ? (
+          <>
+            <Route size={15} className="cm-auto-ico" aria-hidden />
+            <b>{t('Auto')}</b>
+            <span className="cm-engine-meta">{analyzing ? ` · ${t('Analyzing…')}` : [cfg.model, cfg.effort].filter(Boolean).map((x) => ` · ${x}`).join('')}</span>
+          </>
+        ) : (
+          <>
+            <EngineIcon engine={cfg.engine} size={15} />
+            <b>{engine?.label ?? cfg.engine}</b>
+            <span className="cm-engine-meta">
+              · {cfg.model || t('Default')}
+              {cfg.effort ? ` · ${cfg.effort}` : ''}
+            </span>
+          </>
+        )}
         <ChevronDown size={14} aria-hidden />
       </button>
       {pop.open ? (
         <div className="cm-pop cm-engine-pop" role="menu" aria-label={t('Engine and model')}>
+          <button role="menuitemcheckbox" aria-checked={cfg.auto} className="cm-opt" onClick={() => pick({ auto: !cfg.auto })}>
+            <Route size={15} className="cm-auto-ico" aria-hidden />
+            <span className="grow">
+              <b className="cm-opt-label">{t('Auto')}</b>
+              <span className="cm-opt-hint">{t('Analyzes each message and picks a suitable engine from your available ones. Adds a short extra model call.')}</span>
+            </span>
+            {cfg.auto ? <Check size={14} aria-hidden /> : null}
+          </button>
+          <div className="cm-sep" role="separator" />
           {row('engine', t('Provider'), engine?.label ?? cfg.engine, <EngineIcon engine={cfg.engine} size={14} />)}
           {row('model', t('Model'), cfg.model || t('Default'))}
           {engine?.efforts.length ? row('effort', t('Effort'), cfg.effort || t('Default')) : null}
