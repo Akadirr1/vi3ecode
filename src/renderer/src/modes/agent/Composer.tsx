@@ -1,5 +1,5 @@
-import { Fragment, useState, type Ref } from 'react'
-import { FilePen, Lock, SendHorizontal, ShieldQuestion, Square, Zap } from 'lucide-react'
+import { Fragment, useEffect, useState, type Ref } from 'react'
+import { FilePen, GitBranch, Lock, SendHorizontal, ShieldQuestion, Square, Waypoints, Zap } from 'lucide-react'
 import type { Agent, ApprovalMode, Team, TeamRun } from '../../../../shared/types'
 import { copyCount, roleOf } from '../../../../shared/prompt'
 import { api } from '../../api'
@@ -22,6 +22,28 @@ export function Composer({ run, team, text, setText, to, setTo, inputRef }: { ru
   const { project, setRunId } = useApp()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  // Where a new thread works: the project checkout, or its own worktree (remembered per project, per viewer).
+  const isoKey = `am-isolation:${project.id}`
+  const [iso, setIsoState] = useState<'local' | 'worktree'>(() => {
+    try {
+      return localStorage.getItem(isoKey) === 'worktree' ? 'worktree' : 'local'
+    } catch {
+      return 'local'
+    }
+  })
+  const setIso = (v: 'local' | 'worktree') => {
+    setIsoState(v)
+    try {
+      localStorage.setItem(isoKey, v)
+    } catch {
+      // not remembered: fine
+    }
+  }
+  const [isRepo, setIsRepo] = useState(true)
+  useEffect(() => {
+    if (!run) void api.git.status(project.id).then((s) => setIsRepo(s.isRepo), () => setIsRepo(false))
+  }, [project.id, run])
+  const worktree = !run && iso === 'worktree' && isRepo
   const agents = team?.agents ?? []
   const lead = agents.find((a) => a.lead) ?? agents[0]
   const target: Agent | undefined = agents.find((a) => a.id === roleOf(to))
@@ -46,13 +68,15 @@ export function Composer({ run, team, text, setText, to, setTo, inputRef }: { ru
     try {
       if (run) await api.team.send(run.id, body, target ? to : undefined)
       else {
-        const r = await api.team.start(project.id, body, target ? to : undefined)
+        const r = await api.team.start(project.id, body, target ? to : undefined, worktree ? 'worktree' : 'local')
         putRun(r)
         setRunId(r.id)
       }
       setText('')
     } catch (e) {
-      setError(t(errorText(e)))
+      const msg = errorText(e)
+      const failed = 'The worktree could not be created.'
+      setError(msg.startsWith(failed) ? `${t('The worktree could not be created. Your message is back in the composer.')} ${msg.slice(failed.length).trim()}` : t(msg))
     } finally {
       setBusy(false)
     }
@@ -89,6 +113,23 @@ export function Composer({ run, team, text, setText, to, setTo, inputRef }: { ru
           <CanIcon size={12} aria-hidden />
           {t(canLabel)}
         </span>
+        {run ? (
+          <span className="am-can am-iso" title={t('Fixed when the thread was created')}>
+            {run.worktree ? <Waypoints size={12} aria-hidden /> : <GitBranch size={12} aria-hidden />}
+            {run.worktree ? t('isolated worktree') : t('on this branch')}
+          </span>
+        ) : (
+          <span className="seg am-iso" role="group" aria-label={t('Thread workspace')}>
+            <button aria-pressed={!worktree} onClick={() => setIso('local')}>
+              <GitBranch size={12} aria-hidden />
+              {t('on this branch')}
+            </button>
+            <button aria-pressed={worktree} disabled={!isRepo} title={isRepo ? undefined : t('This project is not a Git repository — an isolated worktree needs one')} onClick={() => setIso('worktree')}>
+              <Waypoints size={12} aria-hidden />
+              {t('isolated worktree')}
+            </button>
+          </span>
+        )}
       </div>
       <textarea
         ref={inputRef}
@@ -105,7 +146,11 @@ export function Composer({ run, team, text, setText, to, setTo, inputRef }: { ru
           }
         }}
       />
-      {error ? (
+      {busy && worktree ? (
+        <div className="am-composer-note faint small" role="status">
+          {t("Creating the thread's worktree…")}
+        </div>
+      ) : error ? (
         <div className="am-composer-error" role="alert">
           {error}
         </div>

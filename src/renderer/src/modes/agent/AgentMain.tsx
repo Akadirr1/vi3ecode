@@ -8,6 +8,7 @@ import { Avatar } from '../../components/Avatar'
 import { Composer } from './Composer'
 import { TeamDialog } from './TeamDialog'
 import { Transcript } from './Transcript'
+import { WorktreeBar, WorktreeDiff } from './WorktreeBar'
 import { RUN_STATUS, stripProtocol, useRuns, useTeam } from './store'
 import './agent-mode.css'
 
@@ -26,6 +27,7 @@ export function AgentMain() {
   const [text, setText] = useState('')
   const [to, setTo] = useState('')
   const [dialog, setDialog] = useState<string | null>(null)
+  const [diffOpen, setDiffOpen] = useState(false)
   const input = useRef<HTMLTextAreaElement>(null)
   const agents = team?.agents ?? []
   const composer = <Composer run={run} team={team} text={text} setText={setText} to={to} setTo={setTo} inputRef={input} />
@@ -50,11 +52,19 @@ export function AgentMain() {
           </div>
           <h2 className="am-title">{run ? run.goal.split('\n')[0] : t('No thread selected')}</h2>
         </div>
+        {run?.worktree ? <WorktreeBar run={run} diffOpen={diffOpen} setDiffOpen={setDiffOpen} /> : null}
         {run ? <Capsule run={run} agents={agents} /> : null}
       </header>
       {run ? (
         <>
-          <Transcript key={run.id} run={run} team={team} />
+          {run.worktree && diffOpen ? (
+            <div className="am-split">
+              <Transcript key={run.id} run={run} team={team} />
+              <WorktreeDiff run={run} />
+            </div>
+          ) : (
+            <Transcript key={run.id} run={run} team={team} />
+          )}
           <div className="am-dock">{composer}</div>
         </>
       ) : (

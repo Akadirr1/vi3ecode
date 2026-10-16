@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, CircleAlert, CircleCheck, CirclePause, LoaderCircle, Lock, Settings, Square, UserPlus } from 'lucide-react'
+import { ChevronDown, ChevronRight, CircleAlert, CircleCheck, CirclePause, GitBranch, LoaderCircle, Lock, Settings, Square, UserPlus } from 'lucide-react'
 import type { Agent, TeamRun } from '../../../../shared/types'
 import { roleOf } from '../../../../shared/prompt'
 import { useApp } from '../../context'
@@ -80,6 +80,12 @@ export function AgentSidebar() {
         >
           <ThreadIcon run={r} agents={agents} />
           <span className="scard-title grow">{r.goal.split('\n')[0]}</span>
+          {r.worktree ? (
+            <span className="am-thread-branch" title={r.worktree.branch}>
+              <GitBranch size={11} aria-hidden />
+              {r.worktree.branch.replace(/^work\//, '')}
+            </span>
+          ) : null}
           {r.status === 'running' ? <LoaderCircle size={14} className="am-spin faint" aria-label={t('running')} /> : null}
         </button>
       ))}

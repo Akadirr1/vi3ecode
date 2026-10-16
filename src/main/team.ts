@@ -1,9 +1,10 @@
 // Agent mode: a thread goes to the lead; every turn ends in a handoff or a done. With auto-relay on,
 // the next turn starts by itself until the hop limit or the budget pauses the chain. The user can write
 // into the thread at any time: a running Claude turn is steered, otherwise the next turn reads it.
+import { shell } from 'electron'
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import type { Agent, GlobalTeam, Team, TeamRun, TeamTurn } from '../shared/types'
 import { buildBrief, WRITE_BACK_INSTRUCTION } from '../shared/memory'
 import { agentById, buildTeamPrompt, decideNext, entryIds, findAgent, leadOf, parseTurnEnd } from '../shared/prompt'
@@ -14,6 +15,7 @@ import { getAdapter, setUsage } from './engines'
 import { ClaudeSession, type PermissionRequest } from './engines/claudeSession'
 import { runTurn, type TurnResult } from './runner'
 import { GIT_FLAGS, gitExe } from './git'
+import { createWorktree, mergeWorktree, removeWorktree, worktreeDiff } from './worktree'
 import { confirmTeam, effectiveTeam, trustTeam, unconfirmedTeam } from './trust'
 import { describe } from './chat'
 import { mcpConfigJson } from './mcp'
@@ -209,8 +211,10 @@ async function runNext(state: RunState): Promise<void> {
   const gen = state.gen
   const stopped = () => run.status === 'stopped' || gen !== state.gen
   if (stopped()) return
-  const cwd = getProject(run.projectId).path
-  const team = effectiveTeam(cwd, readTeam(run.projectId))
+  const project = getProject(run.projectId).path
+  const team = effectiveTeam(project, readTeam(run.projectId))
+  // Memory, trust and the team file stay the project's; the agents themselves work in the thread's worktree.
+  const cwd = run.worktree?.path ?? project
   const settings = getSettings()
   const { budget, routing } = team
   if (budget.usd > 0 && run.costUsd - state.costBase >= budget.usd) return finish(state, 'budget')
@@ -234,9 +238,14 @@ async function runNext(state: RunState): Promise<void> {
   run.status = 'running'
   push(run, true)
 
-  if (!adapter.build) {
+  const blocked = !adapter.build
+    ? `${adapter.label} runs in the terminal only; pick a headless engine for ${agent.name}.`
+    : run.worktree && !existsSync(cwd)
+      ? `The thread's worktree folder is missing: ${run.worktree.root}`
+      : undefined
+  if (blocked) {
     turn.status = 'error'
-    turn.error = `${adapter.label} runs in the terminal only; pick a headless engine for ${agent.name}.`
+    turn.error = blocked
     turn.endedAt = Date.now()
     run.next = { agentId: agent.id, note: note ?? '' }
     return finish(state, 'error')
@@ -489,7 +498,7 @@ export const teamApi = {
     loadAll()
     return [...runs.values()].map((s) => s.run).filter((r) => r.projectId === projectId).sort((a, b) => b.updatedAt - a.updatedAt)
   },
-  async start(projectId: string, goal: string, to?: string): Promise<TeamRun> {
+  async start(projectId: string, goal: string, to?: string, isolation?: 'local' | 'worktree'): Promise<TeamRun> {
     loadAll()
     getProject(projectId)
     const text = String(goal ?? '').trim().slice(0, 20_000)
@@ -508,6 +517,12 @@ export const teamApi = {
       pending: [],
       createdAt: Date.now(),
       updatedAt: Date.now()
+    }
+    // Before the thread exists: if the checkout cannot be made, nothing is kept and the message stays in the composer.
+    if (isolation === 'worktree') {
+      run.worktree = await createWorktree(getProject(projectId).path, text.split('\n')[0]).catch((e: unknown) => {
+        throw new Error(`The worktree could not be created. ${e instanceof Error ? e.message : String(e)}`)
+      })
     }
     const state: RunState = { run, hopBase: 0, turnBase: 0, costBase: 0, sessions: new Map(), gen: 0 }
     runs.set(run.id, state)
@@ -568,13 +583,34 @@ export const teamApi = {
       push(state.run, true)
     } else if (state.run.status !== 'done') finish(state, 'stopped')
   },
-  async remove(runId: string): Promise<void> {
+  async remove(runId: string, force?: boolean): Promise<void> {
     const state = getState(runId)
-    state.run.status = 'stopped'
+    if (state.run.status === 'running') state.run.status = 'stopped'
     state.gen++
     state.turn?.stop()
+    // A refused removal (uncommitted or unmerged work) keeps the thread, stopped.
+    if (state.run.worktree) await removeWorktree(getProject(state.run.projectId).path, state.run.worktree, force === true)
     runs.delete(runId)
     rmSync(file(runId), { force: true })
+  },
+  async merge(runId: string): Promise<void> {
+    const { run } = getState(runId)
+    if (!run.worktree) throw new Error('This thread works in the project folder; there is nothing to merge.')
+    if (run.status === 'running') throw new Error('Wait for the team to finish first.')
+    // Like vi3ecode: never merge into the project checkout while a thread is working in it.
+    if ([...runs.values()].some((s) => s.run.projectId === run.projectId && !s.run.worktree && s.run.status === 'running'))
+      throw new Error('Another thread is working in the project folder. Merge once it finishes.')
+    // shortcut: the leftover commit is titled with the goal's first line; vi3ecode has an engine write it from the diff.
+    await mergeWorktree(getProject(run.projectId).path, run.worktree, run.goal.split('\n')[0].slice(0, 72) || 'Agent thread')
+    record({ source: 'team', kind: 'worktree-merge', outcome: 'ok', projectId: run.projectId })
+  },
+  async diff(runId: string): Promise<string> {
+    const { run } = getState(runId)
+    return run.worktree ? worktreeDiff(getProject(run.projectId).path, run.worktree) : ''
+  },
+  async reveal(runId: string): Promise<void> {
+    const { run } = getState(runId)
+    if (run.worktree) await shell.openPath(run.worktree.root)
   }
 }
 

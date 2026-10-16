@@ -34,7 +34,8 @@ Side-by-side details: [MAPPING.md](MAPPING.md).
 - [x] Messages into a running thread (steer the working agent or address @Agent), approval cards, question cards
 - [x] Global agents library (app level)
 - [x] Pause agent, parallel copies of a role (`dev~2`, up to 8; the Lead runs as one); copy waves run in order
-- [ ] Supervision turns, plan mode, worktrees per agent
+- [x] Isolated worktree per thread (`work/<name>` beside the repo): composer choice, Diff / Merge / reveal / remove, branch in the thread list
+- [ ] Supervision turns, Plan Mode (planner + phases), parallel-developer lanes, Open PR
 
 ## Terminal Mode
 

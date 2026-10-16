@@ -21,7 +21,7 @@ const api = {
   settings: ns('settings', ['get', 'set']),
   engines: ns('engines', ['list']),
   chat: { ...ns('chat', ['list', 'get', 'create', 'update', 'send', 'respond', 'stop', 'remove']), onSession: on('chat:session') },
-  team: { ...ns('team', ['get', 'save', 'unconfirmed', 'confirm', 'runs', 'start', 'send', 'continue', 'respond', 'stop', 'remove', 'globals', 'saveGlobal', 'useGlobal', 'removeGlobal']), onRun: on('team:run') },
+  team: { ...ns('team', ['get', 'save', 'unconfirmed', 'confirm', 'runs', 'start', 'send', 'continue', 'respond', 'stop', 'remove', 'merge', 'diff', 'reveal', 'globals', 'saveGlobal', 'useGlobal', 'removeGlobal']), onRun: on('team:run') },
   board: ns('board', ['get', 'save']),
   notes: ns('notes', ['get', 'save']),
   memory: ns('memory', ['list', 'save', 'remove']),

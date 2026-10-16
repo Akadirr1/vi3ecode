@@ -1229,3 +1229,87 @@
 .td-new-ident .input {
   height: 34px;
 }
+
+/* Worktree threads */
+.am-iso {
+  margin-left: auto;
+}
+
+.am-iso.seg button {
+  display: inline-flex;
+  white-space: nowrap;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  font: 500 11px var(--mono);
+}
+
+.am-composer-note {
+  margin: 0 12px 6px;
+}
+
+.am-wt {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.am-wt-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 160px;
+  color: var(--accent);
+  font-size: 10.5px;
+}
+
+.am-wt-branch span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.am-wt .btn.on {
+  background: var(--accent-soft);
+}
+
+.am-wt .iconbtn.danger:hover {
+  color: var(--danger);
+}
+
+.am-wt-status {
+  flex-basis: 100%;
+  color: var(--text-2);
+  text-align: right;
+}
+
+.am-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.am-split > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.am-wt-diff {
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  border-left: 1px solid var(--line);
+}
+
+.am-thread-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 40%;
+  overflow: hidden;
+  color: var(--text-3);
+  font: 10.5px var(--mono);
+  white-space: nowrap;
+}

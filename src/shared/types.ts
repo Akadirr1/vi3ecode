@@ -208,6 +208,8 @@ export interface TeamRun {
   pending: (PendingApproval & { agentId: string })[]
   /** Set while waiting on an agent's @ask-user question; the user's next message answers it. */
   question?: string
+  /** Isolated worktree: a work/<name> branch checked out beside the repository; every agent turn runs there. */
+  worktree?: { root: string; path: string; branch: string }
   createdAt: number
   updatedAt: number
 }
@@ -499,14 +501,20 @@ export interface Api {
     /** Allow them; returns what is still unconfirmed (nothing). */
     confirm(projectId: string): Promise<string[]>
     runs(projectId: string): Promise<TeamRun[]>
-    start(projectId: string, goal: string, to?: string): Promise<TeamRun>
+    /** `isolation: 'worktree'` gives the thread its own work/<name> checkout, created before the first turn. */
+    start(projectId: string, goal: string, to?: string, isolation?: 'local' | 'worktree'): Promise<TeamRun>
     /** Message the thread. Running: the next turn reads it (and goes to `to` if set). Idle: resumes the thread. */
     send(runId: string, text: string, to?: string): Promise<void>
     /** Continue a waiting run; optional agentId overrides who goes next. */
     continue(runId: string, agentId?: string): Promise<void>
     respond(runId: string, approvalId: string, allow: boolean): Promise<void>
     stop(runId: string): Promise<void>
-    remove(runId: string): Promise<void>
+    /** A worktree thread also loses its checkout and branch; without `force` that fails with WORK_WORKTREE_DIRTY when work would be lost. */
+    remove(runId: string, force?: boolean): Promise<void>
+    /** Worktree threads: merge the branch into the project checkout, show what changed, open the folder. */
+    merge(runId: string): Promise<void>
+    diff(runId: string): Promise<string>
+    reveal(runId: string): Promise<void>
     /** Global agents: teams saved for reuse in other projects. */
     globals(): Promise<GlobalTeam[]>
     saveGlobal(projectId: string, name: string): Promise<GlobalTeam[]>
