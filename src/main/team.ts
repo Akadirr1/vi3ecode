@@ -14,7 +14,8 @@ import { getAdapter, setUsage } from './engines'
 import { ClaudeSession, type PermissionRequest } from './engines/claudeSession'
 import { runTurn, type TurnResult } from './runner'
 import { describe } from './chat'
-import { mcpConfigFor } from './plugins'
+import { mcpConfigJson } from './mcp'
+import { BROWSER_ACT_TOOLS, BROWSER_READ_TOOLS } from './browserBridge'
 import { emit, notify } from './events'
 import { record, registerLive } from './activity'
 import { readJson, writeJson } from './fsutil'
@@ -157,8 +158,9 @@ function startAgentTurn(
     model: agent.model,
     effort: agent.effort,
     resumeId,
-    mcpConfig: mcpConfigFor(run.projectId),
+    mcpConfig: mcpConfigJson(run.projectId),
     guarded: getSettings().guardrails,
+    allowedTools: getSettings().browserTools ? [...BROWSER_READ_TOOLS, ...(agent.permission === 'read-only' ? [] : BROWSER_ACT_TOOLS)] : undefined,
     onTurnStart: () => {},
     onText: (t, delta) => onText(t, delta),
     onTool: (n) => onTool(n),

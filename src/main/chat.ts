@@ -14,7 +14,8 @@ import { getAdapter, setUsage } from './engines'
 import { ClaudeSession, type PermissionRequest } from './engines/claudeSession'
 import { runTurn, type TurnHandle } from './runner'
 import { applyMemoryWrites, listMemory } from './project'
-import { mcpConfigFor } from './plugins'
+import { mcpConfigJson } from './mcp'
+import { BROWSER_ACT_TOOLS, BROWSER_READ_TOOLS } from './browserBridge'
 import { emit, notify } from './events'
 import { record, registerLive } from './activity'
 import { readJson, writeJson } from './fsutil'
@@ -137,8 +138,10 @@ function claudeFor(s: ChatSession): ClaudeSession {
     model: s.model,
     effort: s.effort,
     resumeId: s.engineSessionId,
-    mcpConfig: mcpConfigFor(s.projectId),
+    mcpConfig: mcpConfigJson(s.projectId),
     guarded: getSettings().guardrails,
+    // Looking is always allowed; acting on the page too, except for read-only (the user watches the same panel).
+    allowedTools: getSettings().browserTools ? [...BROWSER_READ_TOOLS, ...(s.approval === 'read-only' ? [] : BROWSER_ACT_TOOLS)] : undefined,
     onTurnStart: () => {
       if (!active.has(s.id)) newAssistant(s)
       push(s, true)

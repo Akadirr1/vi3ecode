@@ -41,6 +41,8 @@ export interface ClaudeSessionOpts {
    * guardrail rule matches. Without guardrails, Full access is Claude's own bypass mode.
    */
   guarded?: boolean
+  /** Tools pre-approved for this session (no prompt), e.g. the browser panel's tools. */
+  allowedTools?: string[]
   onTurnStart(): void
   onText(text: string, delta?: boolean): void
   onTool(name: string, file?: string): void
@@ -54,7 +56,7 @@ export interface ClaudeSessionOpts {
 const MODE: Record<ApprovalMode, string> = { 'read-only': 'dontAsk', ask: 'manual', edits: 'acceptEdits', full: 'bypassPermissions' }
 const EDIT_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']
 
-export function claudeArgs(o: Pick<ClaudeSessionOpts, 'approval' | 'model' | 'effort' | 'resumeId' | 'mcpConfig' | 'guarded'>): string[] {
+export function claudeArgs(o: Pick<ClaudeSessionOpts, 'approval' | 'model' | 'effort' | 'resumeId' | 'mcpConfig' | 'guarded' | 'allowedTools'>): string[] {
   const mode = o.approval === 'full' && o.guarded ? 'manual' : MODE[o.approval]
   // Same transport as vi3ecode: partial messages stream tokens; replayed user messages acknowledge steering.
   const args = [
@@ -76,6 +78,7 @@ export function claudeArgs(o: Pick<ClaudeSessionOpts, 'approval' | 'model' | 'ef
   if (o.model) args.push('--model', o.model)
   if (o.effort) args.push('--effort', o.effort)
   if (o.mcpConfig) args.push('--mcp-config', o.mcpConfig)
+  if (o.allowedTools?.length) args.push('--allowedTools', ...o.allowedTools)
   return args
 }
 

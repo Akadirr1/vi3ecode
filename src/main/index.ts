@@ -6,6 +6,7 @@ import { stopAllRuns } from './team'
 import { stopAllChats } from './chat'
 import { loadShellPath } from './shellEnv'
 import { stopAllFlows } from './flows'
+import { startBrowserBridge, stopBrowserBridge } from './browserBridge'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -46,6 +47,7 @@ function createWindow(): void {
 app.whenReady().then(() => {
   loadShellPath()
   registerIpc()
+  startBrowserBridge()
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -56,6 +58,7 @@ app.on('before-quit', () => {
   stopAllChats()
   stopAllRuns()
   stopAllFlows()
+  stopBrowserBridge()
   killAllPtys()
 })
 

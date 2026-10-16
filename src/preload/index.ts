@@ -39,7 +39,7 @@ const api = {
   skills: ns('skills', ['list', 'save', 'remove', 'setInstalled']),
   flows: { ...ns('flows', ['list', 'save', 'remove', 'runs', 'run', 'decide', 'stop']), onRun: on('flows:run') },
   ai: ns('ai', ['ask']),
-  browser: ns('browser', ['saveCapture'])
+  browser: { ...ns('browser', ['saveCapture', 'register']), onOpen: on('browser:open') }
 } as unknown as Api
 
 contextBridge.exposeInMainWorld('api', api)

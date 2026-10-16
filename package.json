@@ -108,6 +108,12 @@
         "AppImage"
       ],
       "category": "Development"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "resources/mcp-shim.cjs",
+        "to": "mcp-shim.cjs"
+      }
+    ]
   }
 }

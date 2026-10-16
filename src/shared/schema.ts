@@ -30,6 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
   memoryInject: true,
   memoryWriteBack: false,
   guardrails: true,
+  browserTools: true,
   hiddenEngines: [],
   openProjects: []
 }
@@ -48,7 +49,7 @@ export function sanitizeSettings(patch: unknown, base: Settings = DEFAULT_SETTIN
   if ('language' in p) out.language = oneOf(p.language, ['en', 'tr'] as const, base.language)
   if ('defaultEngine' in p) out.defaultEngine = oneOf(p.defaultEngine, ENGINE_IDS, base.defaultEngine)
   if ('approval' in p) out.approval = approvalOf(p.approval, base.approval)
-  for (const k of ['memoryInject', 'memoryWriteBack', 'guardrails'] as const) {
+  for (const k of ['memoryInject', 'memoryWriteBack', 'guardrails', 'browserTools'] as const) {
     if (typeof p[k] === 'boolean') out[k] = p[k] as boolean
   }
   if (Array.isArray(p.hiddenEngines)) out.hiddenEngines = p.hiddenEngines.filter((e) => ENGINE_IDS.includes(e as EngineId)) as EngineId[]

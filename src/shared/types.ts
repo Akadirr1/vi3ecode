@@ -52,6 +52,8 @@ export interface Settings {
   memoryWriteBack: boolean
   /** Destructive operations always ask, even under Full access or AUTO-APPROVE. */
   guardrails: boolean
+  /** Engines get the vi3ecode-browser MCP server and can drive the browser panel. */
+  browserTools: boolean
   hiddenEngines: EngineId[]
   /** Project ids open as tabs, in tab order. */
   openProjects: string[]
@@ -555,5 +557,9 @@ export interface Api {
   browser: {
     /** Saves a PNG data URL under .vi3ecode/captures/ and returns its project-relative path. */
     saveCapture(projectId: string, dataUrl: string): Promise<string>
+    /** The browser panel's <webview> registers its webContents id (null when it closes) so engines can drive it. */
+    register(webContentsId: number | null): Promise<void>
+    /** An engine wants the browser: open the panel. */
+    onOpen(cb: () => void): Unsubscribe
   }
 }

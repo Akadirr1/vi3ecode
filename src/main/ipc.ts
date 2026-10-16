@@ -14,8 +14,9 @@ import { skillsApi } from './skills'
 import { flowsApi } from './flows'
 import { aiApi } from './ai'
 import { browserApi } from './browser'
+import { browserBridgeApi } from './browserBridge'
 
-type Listener = 'onSession' | 'onRun' | 'onData' | 'onExit' | 'write' | 'resize'
+type Listener = 'onSession' | 'onRun' | 'onData' | 'onExit' | 'onOpen' | 'write' | 'resize'
 /** What main implements: the Api minus renderer-side subscriptions and fire-and-forget sends. */
 export type MainApi = { [K in keyof Api]: Omit<Api[K], Listener> }
 
@@ -36,7 +37,7 @@ const impl: MainApi = {
   skills: skillsApi,
   flows: flowsApi,
   ai: aiApi,
-  browser: browserApi
+  browser: { ...browserApi, ...browserBridgeApi }
 }
 
 export function registerIpc(): void {
