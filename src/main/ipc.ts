@@ -7,6 +7,13 @@ import { teamApi } from './team'
 import { boardApi, notesApi, memoryApi } from './project'
 import { activityApi } from './activity'
 import { ptyApi, writePty, resizePty } from './pty'
+import { filesApi } from './files'
+import { gitApi } from './git'
+import { pluginsApi } from './plugins'
+import { skillsApi } from './skills'
+import { flowsApi } from './flows'
+import { aiApi } from './ai'
+import { browserApi } from './browser'
 
 type Listener = 'onSession' | 'onRun' | 'onData' | 'onExit' | 'write' | 'resize'
 /** What main implements: the Api minus renderer-side subscriptions and fire-and-forget sends. */
@@ -22,7 +29,14 @@ const impl: MainApi = {
   notes: notesApi,
   memory: memoryApi,
   activity: activityApi,
-  pty: ptyApi
+  pty: ptyApi,
+  files: filesApi,
+  git: gitApi,
+  plugins: pluginsApi,
+  skills: skillsApi,
+  flows: flowsApi,
+  ai: aiApi,
+  browser: browserApi
 }
 
 export function registerIpc(): void {

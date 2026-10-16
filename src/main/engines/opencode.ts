@@ -6,13 +6,15 @@ import { tryJson, withSystem } from './types'
 export const opencode: EngineAdapter = {
   id: 'opencode',
   label: 'opencode',
-  bin: 'opencode',
+  bins: ['opencode'],
+  models: ['anthropic/claude-sonnet-4-5', 'anthropic/claude-haiku-4-5', 'openai/gpt-5', 'google/gemini-2.5-pro'],
+  efforts: [],
   installHint: 'npm install -g opencode-ai, then run `opencode auth login`',
   resumes: true,
   build(o) {
     const args = ['run', '--format', 'json']
     if (o.approval === 'read-only') args.push('--agent', 'plan')
-    if (o.approval === 'auto') args.push('--auto')
+    if (o.approval === 'full') args.push('--auto')
     if (o.model) args.push('-m', o.model)
     if (o.resumeId) args.push('-s', o.resumeId)
     // shortcut: prompt goes on argv (opencode run takes the message as positionals); very long prompts may hit Windows' ~8k argv limit.

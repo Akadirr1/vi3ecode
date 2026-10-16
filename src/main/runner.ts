@@ -3,6 +3,7 @@ import spawn from 'cross-spawn'
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { isAbsolute, relative } from 'node:path'
 import type { EngineAdapter, EngineEvent, TurnOpts } from './engines/types'
+import { binOf } from './engines'
 
 export interface TurnResult {
   text: string
@@ -42,7 +43,8 @@ export function runTurn(
   let stopped = false
   let spawnError: string | undefined
 
-  const child: ChildProcess = spawn(adapter.bin, inv.args, {
+  const bin = binOf(adapter)
+  const child: ChildProcess = spawn(bin, inv.args, {
     cwd,
     env: process.env,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -89,7 +91,7 @@ export function runTurn(
 
   const done = new Promise<TurnResult>((resolve) => {
     child.on('error', (err: NodeJS.ErrnoException) => {
-      spawnError = err.code === 'ENOENT' ? `${adapter.bin} was not found on PATH. ${adapter.installHint}` : err.message
+      spawnError = err.code === 'ENOENT' ? `${bin} was not found on PATH. ${adapter.installHint}` : err.message
     })
     child.on('close', (code) => {
       if (buf.trim()) for (const e of parse(buf)) handle(e)
@@ -99,8 +101,8 @@ export function runTurn(
       if (!stopped) {
         if (spawnError) error = spawnError
         else if (resultError) error = resultText || 'The engine reported an error.'
-        else if (code !== 0 && code !== null) error = lastLines(stderr) || `${adapter.bin} exited with code ${code}`
-        else if (code === null && !text) error = lastLines(stderr) || `${adapter.bin} was terminated`
+        else if (code !== 0 && code !== null) error = lastLines(stderr) || `${bin} exited with code ${code}`
+        else if (code === null && !text) error = lastLines(stderr) || `${bin} was terminated`
       }
       resolve({ text, tools, files: [...files], costUsd, sessionId, error, stopped, durationMs: Date.now() - started })
     })

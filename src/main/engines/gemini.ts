@@ -3,12 +3,14 @@ import { tryJson, withSystem } from './types'
 
 // gemini-cli 0.64: `gemini -p ""` runs headless and appends the -p text to stdin input.
 // stream-json events: init, message (role, content, delta), tool_use, tool_result, error, result.
-const MODE = { 'read-only': 'plan', supervised: 'auto_edit', auto: 'yolo' } as const
+const MODE = { 'read-only': 'plan', ask: 'default', edits: 'auto_edit', full: 'yolo' } as const
 
 export const gemini: EngineAdapter = {
   id: 'gemini',
   label: 'Gemini CLI',
-  bin: 'gemini',
+  bins: ['gemini'],
+  models: ['gemini-2.5-pro', 'gemini-2.5-flash'],
+  efforts: [],
   installHint: 'npm install -g @google/gemini-cli, then run `gemini` once to sign in',
   build(o) {
     const args = ['-p', '', '-o', 'stream-json', '--approval-mode', MODE[o.approval], '--skip-trust']

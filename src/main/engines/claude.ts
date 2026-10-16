@@ -1,15 +1,19 @@
 import type { EngineAdapter, EngineEvent } from './types'
 import { tryJson, withSystem } from './types'
 
+// One-shot turns (Ask AI, fallbacks). Chat and agent turns use the persistent ClaudeSession instead.
 // Verified against Claude Code 2.1.x: `claude -p --output-format stream-json --verbose`, prompt on stdin.
-const MODE = { 'read-only': 'dontAsk', supervised: 'acceptEdits', auto: 'bypassPermissions' } as const
+// Nobody can answer a prompt in a one-shot turn, so `ask` denies whatever would have asked.
+const MODE = { 'read-only': 'dontAsk', ask: 'dontAsk', edits: 'acceptEdits', full: 'bypassPermissions' } as const
 
 const FILE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 
 export const claude: EngineAdapter = {
   id: 'claude',
   label: 'Claude Code',
-  bin: 'claude',
+  bins: ['claude'],
+  models: ['claude-sonnet-5', 'claude-opus-5-5', 'claude-opus-5', 'claude-fable-5-1', 'claude-haiku-4-5-20251001', 'opus', 'sonnet', 'haiku'],
+  efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
   installHint: 'npm install -g @anthropic-ai/claude-code, then run `claude` once to sign in',
   resumes: true,
   build(o) {
@@ -18,6 +22,7 @@ export const claude: EngineAdapter = {
     if (o.approval === 'read-only') args.push('--disallowedTools', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit')
     if (o.resumeId) args.push('--resume', o.resumeId)
     if (o.model) args.push('--model', o.model)
+    if (o.effort) args.push('--effort', o.effort)
     return { args, stdin: withSystem(o) }
   },
   parse(line) {

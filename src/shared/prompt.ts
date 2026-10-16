@@ -65,28 +65,41 @@ export const leadOf = (team: Team): Agent => team.agents.find((a) => a.lead) ?? 
 
 export type Next = { kind: 'handoff'; agentId: string; note: string } | { kind: 'done'; summary: string } | { kind: 'wait'; reason: string }
 
-/** Routing rules: only the lead finishes; anything unclear goes back to the lead; a lead that does not route waits for the user. */
+/** Who `agent` may hand off to: its allowed list, or everyone else when the list is empty. */
+export const handoffTargets = (team: Team, agent: Agent): Agent[] =>
+  team.agents.filter((a) => a.id !== agent.id && (agent.handoffs.length === 0 || agent.handoffs.includes(a.id)))
+
+/**
+ * Routing rules: only the lead finishes the goal. With return-to-lead on, anything unclear (no marker,
+ * unknown or disallowed target, a teammate's DONE) goes back to the lead; off, the chain pauses for the user
+ * (a teammate's DONE then finishes the thread). A lead that does not route waits for the user.
+ */
 export function decideNext(team: Team, speaker: Agent, end: TurnEnd): Next {
   const lead = leadOf(team)
   const isLead = speaker.id === lead.id
+  const back = (note: string): Next =>
+    team.routing.returnToLead && !isLead ? { kind: 'handoff', agentId: lead.id, note } : { kind: 'wait', reason: note }
   if (end.done !== undefined) {
-    if (isLead) return { kind: 'done', summary: end.done }
+    if (isLead || !team.routing.returnToLead) return { kind: 'done', summary: end.done }
     return { kind: 'handoff', agentId: lead.id, note: `${speaker.name} reports done: ${end.done}` }
   }
   if (end.handoff) {
     const target = findAgent(team, end.handoff.to)
-    if (target && target.id !== speaker.id) return { kind: 'handoff', agentId: target.id, note: end.handoff.note }
-    if (isLead) return { kind: 'wait', reason: target ? 'The lead handed off to itself.' : `Unknown teammate "${end.handoff.to}".` }
-    return { kind: 'handoff', agentId: lead.id, note: `${speaker.name} handed off to "${end.handoff.to}", which is not a teammate: ${end.handoff.note}` }
+    if (!target) return back(`${speaker.name} handed off to "${end.handoff.to}", which is not a teammate: ${end.handoff.note}`)
+    if (target.id === speaker.id) return back(`${speaker.name} handed off to itself.`)
+    if (!handoffTargets(team, speaker).some((a) => a.id === target.id)) {
+      return back(`${speaker.name} may not hand off to ${target.name}: ${end.handoff.note}`)
+    }
+    return { kind: 'handoff', agentId: target.id, note: end.handoff.note }
   }
-  if (isLead) return { kind: 'wait', reason: 'The lead ended without a handoff.' }
-  return { kind: 'handoff', agentId: lead.id, note: `${speaker.name} finished without naming who goes next.` }
+  return isLead ? { kind: 'wait', reason: 'The lead ended without a handoff.' } : back(`${speaker.name} finished without naming who goes next.`)
 }
 
 const PERMISSION_TEXT: Record<ApprovalMode, string> = {
   'read-only': 'read-only: you must not modify files or run commands that change state.',
-  supervised: 'supervised: you may edit files inside this project; risky commands are refused.',
-  auto: 'auto: you may edit files and run commands without asking.'
+  ask: 'ask: actions that need permission wait for the user to approve them.',
+  edits: 'edits: you may edit files inside this project; other actions may need approval.',
+  full: 'full: you may edit files and run commands without asking.'
 }
 
 const TRANSCRIPT_CHARS = 10_000
@@ -104,7 +117,10 @@ export function buildTeamPrompt(o: { team: Team; agent: Agent; goal: string; tur
     if (t.status === 'running') continue
     const text = t.text.length > TURN_CHARS ? `${t.text.slice(0, TURN_CHARS)}… [truncated]` : t.text
     const files = t.filesTouched.length ? `\n(files touched: ${t.filesTouched.slice(0, 20).join(', ')})` : ''
-    const block = `### ${t.agentName}${t.error ? ' (failed)' : ''}\n${text || t.error || '(no output)'}${files}`
+    const block =
+      t.kind === 'user'
+        ? `### User${t.to ? ` → ${t.to}` : ''}\n${text}`
+        : `### ${t.agentName}${t.error ? ' (failed)' : ''}\n${text || t.error || '(no output)'}${files}`
     if (size + block.length > TRANSCRIPT_CHARS) {
       blocks.unshift('(earlier turns omitted)')
       break
@@ -114,6 +130,7 @@ export function buildTeamPrompt(o: { team: Team; agent: Agent; goal: string; tur
   }
 
   const isLead = o.agent.id === lead.id
+  const targets = handoffTargets(o.team, o.agent).map((a) => a.name)
   const ask = o.note
     ? `${o.from ?? 'A teammate'} handed off to you: ${o.note}`
     : isLead && o.turns.length === 0
@@ -141,6 +158,7 @@ export function buildTeamPrompt(o: { team: Team; agent: Agent; goal: string; tur
     ask,
     `Do only your part, then end your reply with exactly one final line:`,
     `HANDOFF: <teammate name> — <what they should do next>`,
+    `You may hand off to: ${targets.join(', ') || '(nobody)'}.`,
     isLead
       ? `or, once the goal is achieved and verified:\nDONE: <one-line summary>`
       : `If you believe the goal is complete, hand off to ${lead.name} instead of finishing it yourself.`

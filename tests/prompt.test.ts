@@ -38,6 +38,16 @@ describe('decideNext', () => {
     expect(decideNext(team, agent('lead'), { done: 'ok' })).toEqual({ kind: 'done', summary: 'ok' })
     expect(decideNext(team, agent('qa'), { done: 'ok' })).toMatchObject({ kind: 'handoff', agentId: 'lead' })
   })
+  it('honours allowed handoff targets and return-to-lead off', () => {
+    const t = structuredClone(team)
+    const dev = t.agents.find((a) => a.id === 'developer')!
+    dev.handoffs = ['qa']
+    expect(decideNext(t, dev, { handoff: { to: 'Designer', note: 'x' } })).toMatchObject({ kind: 'handoff', agentId: 'lead' })
+    expect(decideNext(t, dev, { handoff: { to: 'QA', note: 'x' } })).toMatchObject({ kind: 'handoff', agentId: 'qa' })
+    t.routing.returnToLead = false
+    expect(decideNext(t, dev, {})).toMatchObject({ kind: 'wait' })
+    expect(decideNext(t, agent('qa'), { done: 'ok' })).toMatchObject({ kind: 'done' })
+  })
   it('sends unclear endings back to the lead, and makes a silent lead wait', () => {
     expect(decideNext(team, agent('developer'), {})).toMatchObject({ kind: 'handoff', agentId: 'lead' })
     expect(decideNext(team, agent('developer'), { handoff: { to: 'Nobody', note: '' } })).toMatchObject({ kind: 'handoff', agentId: 'lead' })
@@ -49,7 +59,7 @@ describe('decideNext', () => {
 describe('buildTeamPrompt', () => {
   it('includes roster, goal, permission, protocol and the handoff note', () => {
     const turns: TeamTurn[] = [
-      { id: 't1', agentId: 'lead', agentName: 'Lead', engine: 'claude', text: 'x'.repeat(5000), tools: [], filesTouched: ['a.ts'], status: 'done', startedAt: 0 }
+      { id: 't1', kind: 'agent', agentId: 'lead', agentName: 'Lead', engine: 'claude', text: 'x'.repeat(5000), tools: [], filesTouched: ['a.ts'], status: 'done', startedAt: 0 }
     ]
     const p = buildTeamPrompt({ team, agent: agent('developer'), goal: 'Add refresh', turns, note: 'do track A', from: 'Lead' })
     expect(p).toContain('You are Developer')
@@ -60,7 +70,8 @@ describe('buildTeamPrompt', () => {
     expect(p).toContain('hand off to Lead instead')
     expect(p).toContain('[truncated]')
     expect(p).toContain('files touched: a.ts')
-    expect(p).toContain('Permission: supervised')
+    expect(p).toContain('Permission: edits')
+    expect(p).toContain('You may hand off to: Lead, Analyst, QA, Designer.')
   })
 })
 

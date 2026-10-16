@@ -1,7 +1,7 @@
 import spawn from 'cross-spawn'
 import { accessSync, constants } from 'node:fs'
 import { delimiter, join } from 'node:path'
-import type { EngineId, EngineInfo } from '../../shared/types'
+import type { EngineId, EngineInfo, EngineUsage } from '../../shared/types'
 import type { EngineAdapter } from './types'
 import { getSettings } from '../store'
 import { claude } from './claude'
@@ -11,7 +11,14 @@ import { opencode } from './opencode'
 import { cursor } from './cursor'
 
 // Terminal-only engines: detected and launchable in a terminal pane, no headless contract yet.
-const terminalOnly = (id: EngineId, label: string, bin: string, installHint: string): EngineAdapter => ({ id, label, bin, installHint })
+const terminalOnly = (id: EngineId, label: string, bins: string[], installHint: string, models: string[] = [], efforts: string[] = []): EngineAdapter => ({
+  id,
+  label,
+  bins,
+  installHint,
+  models,
+  efforts
+})
 
 export const ADAPTERS: EngineAdapter[] = [
   claude,
@@ -19,12 +26,12 @@ export const ADAPTERS: EngineAdapter[] = [
   gemini,
   opencode,
   cursor,
-  terminalOnly('kimi', 'Kimi CLI', 'kimi', 'uv tool install kimi-cli'),
-  terminalOnly('grok', 'Grok CLI', 'grok', 'npm install -g @vibe-kit/grok-cli'),
-  terminalOnly('kiro', 'Kiro CLI', 'kiro-cli', 'curl -fsSL https://cli.kiro.dev/install | bash'),
-  terminalOnly('cline', 'Cline CLI', 'cline', 'npm install -g cline'),
-  terminalOnly('command', 'Command Code', 'command-code', 'npm install -g command-code'),
-  terminalOnly('antigravity', 'Antigravity', 'antigravity', 'Install Google Antigravity and enable its shell command')
+  terminalOnly('kimi', 'Kimi', ['kimi'], 'uv tool install kimi-cli', ['kimi-code/k3', 'kimi-code/k3-256k', 'kimi-code/kimi-for-coding']),
+  terminalOnly('grok', 'Grok', ['grok'], 'npm install -g @vibe-kit/grok-cli'),
+  terminalOnly('kiro', 'Kiro CLI', ['kiro-cli'], 'curl -fsSL https://cli.kiro.dev/install | bash'),
+  terminalOnly('cline', 'Cline', ['cline'], 'npm install -g cline'),
+  terminalOnly('command', 'Command Code', ['command-code'], 'npm install -g command-code', [], ['low', 'medium', 'high', 'xhigh', 'max']),
+  terminalOnly('antigravity', 'Google Antigravity', ['agy'], 'Install Google Antigravity and enable its `agy` command', [], ['low', 'medium', 'high'])
 ]
 
 export function getAdapter(id: EngineId): EngineAdapter {
@@ -66,6 +73,23 @@ function version(bin: string): Promise<string | undefined> {
 }
 
 let cache: EngineInfo[] | null = null
+const found = new Map<EngineId, string>()
+const usage = new Map<EngineId, EngineUsage>()
+
+/** The executable to spawn for an engine: whichever of its names was found on PATH. */
+export function binOf(a: EngineAdapter): string {
+  return found.get(a.id) ?? a.bins[0]
+}
+
+/** Latest rate-limit window an engine reported (Claude Code streams it with every turn). */
+export function setUsage(id: EngineId, info: Record<string, unknown>): void {
+  usage.set(id, {
+    status: typeof info.status === 'string' ? info.status : undefined,
+    window: typeof info.rateLimitType === 'string' ? info.rateLimitType : undefined,
+    resetsAt: typeof info.resetsAt === 'number' ? info.resetsAt * 1000 : undefined,
+    updatedAt: Date.now()
+  })
+}
 
 async function detect(): Promise<EngineInfo[]> {
   const hidden = getSettings().hiddenEngines
@@ -73,16 +97,19 @@ async function detect(): Promise<EngineInfo[]> {
     ADAPTERS.map(async (a): Promise<EngineInfo> => {
       const enabled = !hidden.includes(a.id)
       // A hidden engine is not polled at all.
-      const path = enabled ? findOnPath(a.bin) : null
+      const bin = enabled ? a.bins.find((b) => findOnPath(b)) : undefined
+      if (bin) found.set(a.id, bin)
       return {
         id: a.id,
         label: a.label,
-        bin: a.bin,
-        installed: !!path,
-        version: path ? await version(a.bin) : undefined,
+        bin: bin ?? a.bins[0],
+        installed: !!bin,
+        version: bin ? await version(bin) : undefined,
         headless: !!a.build,
         enabled,
-        installHint: a.installHint
+        installHint: a.installHint,
+        models: a.models,
+        efforts: a.efforts
       }
     })
   )
@@ -92,6 +119,6 @@ export const enginesApi = {
   async list(refresh?: boolean): Promise<EngineInfo[]> {
     if (!cache || refresh) cache = await detect()
     const hidden = getSettings().hiddenEngines
-    return cache.map((e) => ({ ...e, enabled: !hidden.includes(e.id) }))
+    return cache.map((e) => ({ ...e, enabled: !hidden.includes(e.id), usage: usage.get(e.id) }))
   }
 }

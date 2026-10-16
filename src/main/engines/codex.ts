@@ -2,17 +2,26 @@ import type { EngineAdapter, EngineEvent } from './types'
 import { tryJson, withSystem } from './types'
 
 // Verified against codex-cli 0.163: `codex exec --json -` reads the prompt from stdin, JSONL on stdout.
-const SANDBOX = { 'read-only': ['-s', 'read-only'], supervised: ['-s', 'workspace-write'], auto: ['--dangerously-bypass-approvals-and-sandbox'] }
+// `codex exec` cannot pause for approval, so `ask` runs sandboxed like `edits`: writes stay in the workspace, no network.
+const SANDBOX = {
+  'read-only': ['-s', 'read-only'],
+  ask: ['-s', 'workspace-write'],
+  edits: ['-s', 'workspace-write'],
+  full: ['--dangerously-bypass-approvals-and-sandbox']
+}
 
 export const codex: EngineAdapter = {
   id: 'codex',
   label: 'Codex',
-  bin: 'codex',
+  bins: ['codex'],
+  models: ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'],
+  efforts: ['minimal', 'low', 'medium', 'high', 'xhigh'],
   installHint: 'npm install -g @openai/codex, then run `codex` once to sign in',
   resumes: true,
   build(o) {
     const args = ['exec', '--json', '--skip-git-repo-check', ...SANDBOX[o.approval]]
     if (o.model) args.push('-m', o.model)
+    if (o.effort) args.push('-c', `model_reasoning_effort=${o.effort}`)
     if (o.resumeId) args.push('resume', o.resumeId)
     args.push('-')
     return { args, stdin: withSystem(o) }

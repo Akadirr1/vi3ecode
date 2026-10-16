@@ -6,12 +6,14 @@ import { tryJson, withSystem } from './types'
 export const cursor: EngineAdapter = {
   id: 'cursor',
   label: 'Cursor CLI',
-  bin: 'cursor-agent',
+  bins: ['agent', 'cursor-agent'],
+  models: [],
+  efforts: [],
   installHint: 'curl https://cursor.com/install -fsS | bash, then `cursor-agent login`',
   resumes: true,
   build(o) {
     const args = ['-p', '--output-format', 'stream-json']
-    if (o.approval === 'auto') args.push('--force')
+    if (o.approval === 'full') args.push('--force')
     if (o.model) args.push('-m', o.model)
     if (o.resumeId) args.push('--resume', o.resumeId)
     // shortcut: Cursor has no documented read-only flag; read-only is enforced by instruction only.

@@ -5,6 +5,7 @@ export interface TurnOpts {
   /** Extra system-level instructions (memory brief, agent role). */
   system?: string
   model?: string
+  effort?: string
   approval: ApprovalMode
   /** Engine-side session id from a previous turn, to continue that conversation. */
   resumeId?: string
@@ -28,8 +29,11 @@ export interface Invocation {
 export interface EngineAdapter {
   id: EngineId
   label: string
-  bin: string
+  /** Executable names tried in order; the first found on PATH is used. */
+  bins: string[]
   installHint: string
+  models: string[]
+  efforts: string[]
   /** Can continue a conversation from resumeId. Otherwise callers replay recent history in the prompt. */
   resumes?: boolean
   /** Builds a non-interactive streaming invocation. Absent → terminal-only engine. */

@@ -13,8 +13,8 @@ describe('claude adapter', () => {
     expect(ro.args).toEqual(expect.arrayContaining(['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk', '--resume', 'abc']))
     expect(ro.args).toContain('--disallowedTools')
     expect(ro.stdin).toBe('SYS\n\n---\n\nhi')
-    expect(claude.build!({ prompt: 'x', approval: 'auto' }).args).toContain('bypassPermissions')
-    expect(claude.build!({ prompt: 'x', approval: 'supervised' }).args).toContain('acceptEdits')
+    expect(claude.build!({ prompt: 'x', approval: 'full' }).args).toContain('bypassPermissions')
+    expect(claude.build!({ prompt: 'x', approval: 'edits' }).args).toContain('acceptEdits')
   })
   it('parses a recorded stream (shapes captured from Claude Code 2.1)', () => {
     const ev = parseAll(claude, [
@@ -38,7 +38,7 @@ describe('claude adapter', () => {
 describe('codex adapter', () => {
   it('builds exec / resume invocations reading stdin', () => {
     expect(codex.build!({ prompt: 'p', approval: 'read-only' }).args).toEqual(['exec', '--json', '--skip-git-repo-check', '-s', 'read-only', '-'])
-    expect(codex.build!({ prompt: 'p', approval: 'auto', resumeId: 't1', model: 'm' }).args).toEqual([
+    expect(codex.build!({ prompt: 'p', approval: 'full', resumeId: 't1', model: 'm' }).args).toEqual([
       'exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-m', 'm', 'resume', 't1', '-'
     ])
   })

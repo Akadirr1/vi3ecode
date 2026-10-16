@@ -20,8 +20,8 @@ const api = {
   projects: ns('projects', ['list', 'open', 'remove']),
   settings: ns('settings', ['get', 'set']),
   engines: ns('engines', ['list']),
-  chat: { ...ns('chat', ['list', 'get', 'create', 'update', 'send', 'stop', 'remove']), onSession: on('chat:session') },
-  team: { ...ns('team', ['get', 'save', 'runs', 'start', 'continue', 'stop']), onRun: on('team:run') },
+  chat: { ...ns('chat', ['list', 'get', 'create', 'update', 'send', 'respond', 'stop', 'remove']), onSession: on('chat:session') },
+  team: { ...ns('team', ['get', 'save', 'runs', 'start', 'send', 'continue', 'respond', 'stop', 'remove']), onRun: on('team:run') },
   board: ns('board', ['get', 'save']),
   notes: ns('notes', ['get', 'save']),
   memory: ns('memory', ['list', 'save', 'remove']),
@@ -32,7 +32,14 @@ const api = {
     resize: (id: string, cols: number, rows: number) => ipcRenderer.send('pty:resize', id, cols, rows),
     onData: on('pty:data'),
     onExit: on('pty:exit')
-  }
+  },
+  files: ns('files', ['list', 'read']),
+  git: ns('git', ['status', 'diff', 'stage', 'unstage', 'commit', 'log']),
+  plugins: ns('plugins', ['list', 'setActive']),
+  skills: ns('skills', ['list', 'save', 'remove', 'setInstalled']),
+  flows: { ...ns('flows', ['list', 'save', 'remove', 'runs', 'run', 'decide', 'stop']), onRun: on('flows:run') },
+  ai: ns('ai', ['ask']),
+  browser: ns('browser', ['saveCapture'])
 } as unknown as Api
 
 contextBridge.exposeInMainWorld('api', api)

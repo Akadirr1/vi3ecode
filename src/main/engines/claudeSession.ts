@@ -1,0 +1,239 @@
+// A long-lived Claude Code process speaking stream-json on stdin/stdout (verified with Claude Code 2.1).
+// One process per chat: messages sent mid-turn steer the running turn, `interrupt` stops a turn
+// without killing the session, and tool permission prompts arrive as control requests the app answers.
+import spawn from 'cross-spawn'
+import type { ChildProcess } from 'node:child_process'
+import { isAbsolute, relative } from 'node:path'
+import type { ApprovalMode } from '../../shared/types'
+import { killTree } from '../runner'
+
+export interface PermissionRequest {
+  id: string
+  tool: string
+  /** Short human description from Claude (e.g. a file name or command). */
+  description: string
+  input: Record<string, unknown>
+  suggestions: unknown[]
+}
+
+export interface ClaudeTurnEnd {
+  text: string
+  tools: string[]
+  files: string[]
+  costUsd?: number
+  error?: string
+  interrupted: boolean
+  durationMs: number
+}
+
+export interface ClaudeSessionOpts {
+  cwd: string
+  approval: ApprovalMode
+  model?: string
+  effort?: string
+  resumeId?: string
+  /** JSON for --mcp-config (plugin MCP servers). */
+  mcpConfig?: string
+  onTurnStart(): void
+  onText(text: string): void
+  onTool(name: string, file?: string): void
+  onSession(id: string): void
+  onPermission(req: PermissionRequest): void
+  onRateLimit?(info: Record<string, unknown>): void
+  onTurnEnd(r: ClaudeTurnEnd): void
+  onExit(error?: string): void
+}
+
+const MODE: Record<ApprovalMode, string> = { 'read-only': 'dontAsk', ask: 'manual', edits: 'acceptEdits', full: 'bypassPermissions' }
+const EDIT_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']
+
+export function claudeArgs(o: Pick<ClaudeSessionOpts, 'approval' | 'model' | 'effort' | 'resumeId' | 'mcpConfig'>): string[] {
+  const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--permission-prompt-tool', 'stdio', '--permission-mode', MODE[o.approval]]
+  if (o.approval === 'read-only') args.push('--disallowedTools', ...EDIT_TOOLS)
+  if (o.resumeId) args.push('--resume', o.resumeId)
+  if (o.model) args.push('--model', o.model)
+  if (o.effort) args.push('--effort', o.effort)
+  if (o.mcpConfig) args.push('--mcp-config', o.mcpConfig)
+  return args
+}
+
+export class ClaudeSession {
+  private child: ChildProcess
+  private buf = ''
+  private stderr = ''
+  private reqSeq = 0
+  private turn: { texts: string[]; tools: string[]; files: Set<string>; started: number; interrupted: boolean } | null = null
+  private closed = false
+
+  constructor(private o: ClaudeSessionOpts) {
+    this.child = spawn('claude', claudeArgs(o), {
+      cwd: o.cwd,
+      env: process.env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
+      detached: process.platform !== 'win32'
+    })
+    this.child.stdout?.setEncoding('utf8')
+    this.child.stdout?.on('data', (chunk: string) => {
+      this.buf += chunk
+      let nl: number
+      while ((nl = this.buf.indexOf('\n')) >= 0) {
+        const line = this.buf.slice(0, nl)
+        this.buf = this.buf.slice(nl + 1)
+        this.handle(line)
+      }
+    })
+    this.child.stderr?.setEncoding('utf8')
+    this.child.stderr?.on('data', (c: string) => (this.stderr = (this.stderr + c).slice(-4000)))
+    this.child.stdin?.on('error', () => {})
+    this.child.on('error', (err: NodeJS.ErrnoException) => {
+      this.finishTurn(err.code === 'ENOENT' ? 'claude was not found on PATH. npm install -g @anthropic-ai/claude-code' : err.message)
+      this.exit(err.message)
+    })
+    this.child.on('close', (code) => {
+      const msg = this.closed ? undefined : this.stderr.trim().split('\n').slice(-6).join('\n') || `claude exited with code ${code}`
+      this.finishTurn(msg)
+      this.exit(msg)
+    })
+    this.write({ type: 'control_request', request_id: this.nextId(), request: { subtype: 'initialize' } })
+  }
+
+  get busy(): boolean {
+    return !!this.turn
+  }
+
+  get alive(): boolean {
+    return !this.closed && this.child.exitCode === null
+  }
+
+  /** Starts a turn, or steers the running one. */
+  send(text: string): void {
+    if (!this.turn) this.beginTurn()
+    this.write({ type: 'user', message: { role: 'user', content: text } })
+  }
+
+  respond(requestId: string, req: PermissionRequest, allow: boolean, always = false): void {
+    const response = allow
+      ? { behavior: 'allow', updatedInput: req.input, ...(always && req.suggestions.length ? { updatedPermissions: req.suggestions } : {}) }
+      : { behavior: 'deny', message: 'The user denied this action in vi3ecode.' }
+    this.write({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response } })
+  }
+
+  setApproval(approval: ApprovalMode): void {
+    this.write({ type: 'control_request', request_id: this.nextId(), request: { subtype: 'set_permission_mode', mode: MODE[approval] } })
+  }
+
+  interrupt(): void {
+    if (!this.turn) return
+    this.turn.interrupted = true
+    this.write({ type: 'control_request', request_id: this.nextId(), request: { subtype: 'interrupt' } })
+  }
+
+  close(): void {
+    if (this.closed) return
+    this.closed = true
+    this.child.stdin?.end()
+    const t = setTimeout(() => killTree(this.child), 2000)
+    t.unref()
+  }
+
+  kill(): void {
+    this.closed = true
+    killTree(this.child)
+  }
+
+  private nextId(): string {
+    return `v3-${++this.reqSeq}`
+  }
+
+  private write(o: unknown): void {
+    if (this.child.stdin?.writable) this.child.stdin.write(JSON.stringify(o) + '\n')
+  }
+
+  private beginTurn(): void {
+    this.turn = { texts: [], tools: [], files: new Set(), started: Date.now(), interrupted: false }
+    this.o.onTurnStart()
+  }
+
+  private finishTurn(error?: string, costUsd?: number, resultText?: string): void {
+    const t = this.turn
+    if (!t) return
+    this.turn = null
+    const text = t.texts.join('\n\n').trim() || (resultText ?? '').trim()
+    this.o.onTurnEnd({
+      text,
+      tools: t.tools,
+      files: [...t.files],
+      costUsd,
+      error: t.interrupted ? undefined : error,
+      interrupted: t.interrupted,
+      durationMs: Date.now() - t.started
+    })
+  }
+
+  private exit(error?: string): void {
+    if (this.closed && error === undefined) return this.o.onExit()
+    this.closed = true
+    this.o.onExit(error)
+  }
+
+  private handle(line: string): void {
+    let e: Record<string, unknown>
+    try {
+      e = JSON.parse(line) as Record<string, unknown>
+    } catch {
+      return
+    }
+    switch (e.type) {
+      case 'system':
+        if (e.subtype === 'init' && typeof e.session_id === 'string') this.o.onSession(e.session_id)
+        return
+      case 'assistant': {
+        // A steer that landed after the previous result starts a new turn on its own.
+        if (!this.turn) this.beginTurn()
+        const content = ((e.message as { content?: unknown[] } | undefined)?.content ?? []) as Record<string, unknown>[]
+        for (const c of content) {
+          if (c.type === 'text' && typeof c.text === 'string') {
+            this.turn!.texts.push(c.text)
+            this.o.onText(c.text)
+          } else if (c.type === 'tool_use') {
+            const name = String(c.name ?? 'tool')
+            const input = (c.input ?? {}) as Record<string, unknown>
+            let file = EDIT_TOOLS.includes(name) ? String(input.file_path ?? input.notebook_path ?? '') : ''
+            if (file && isAbsolute(file)) file = relative(this.o.cwd, file)
+            this.turn!.tools.push(name)
+            if (file) this.turn!.files.add(file)
+            this.o.onTool(name, file || undefined)
+          }
+        }
+        return
+      }
+      case 'result': {
+        const isError = e.is_error === true || (typeof e.subtype === 'string' && e.subtype.startsWith('error'))
+        if (typeof e.session_id === 'string') this.o.onSession(e.session_id)
+        this.finishTurn(isError ? String(e.result ?? e.subtype ?? 'error') : undefined, typeof e.total_cost_usd === 'number' ? e.total_cost_usd : undefined, typeof e.result === 'string' ? e.result : undefined)
+        return
+      }
+      case 'rate_limit_event':
+        if (e.rate_limit_info && typeof e.rate_limit_info === 'object') this.o.onRateLimit?.(e.rate_limit_info as Record<string, unknown>)
+        return
+      case 'control_request': {
+        const id = String(e.request_id ?? '')
+        const req = (e.request ?? {}) as Record<string, unknown>
+        if (req.subtype === 'can_use_tool') {
+          this.o.onPermission({
+            id,
+            tool: String(req.display_name ?? req.tool_name ?? 'tool'),
+            description: String(req.description ?? ''),
+            input: (req.input ?? {}) as Record<string, unknown>,
+            suggestions: Array.isArray(req.permission_suggestions) ? req.permission_suggestions : []
+          })
+        } else {
+          // Never leave Claude waiting on a request type we do not implement.
+          this.write({ type: 'control_response', response: { subtype: 'error', request_id: id, error: `vi3ecode does not handle ${String(req.subtype)}` } })
+        }
+        return
+      }
+    }
+  }
+}

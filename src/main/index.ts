@@ -5,6 +5,7 @@ import { killAllPtys } from './pty'
 import { stopAllRuns } from './team'
 import { stopAllChats } from './chat'
 import { loadShellPath } from './shellEnv'
+import { stopAllFlows } from './flows'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -45,6 +46,7 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   stopAllChats()
   stopAllRuns()
+  stopAllFlows()
   killAllPtys()
 })
 

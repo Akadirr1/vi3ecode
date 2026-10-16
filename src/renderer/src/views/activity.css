@@ -1,0 +1,76 @@
+.view-body.act-body {
+  gap: 14px;
+  overflow: hidden;
+}
+
+.act-source {
+  width: auto;
+}
+
+.act-live {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.act-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.act-stat-n {
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.act-table-wrap {
+  flex: 0 1 auto;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: auto;
+}
+
+.act-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.act-table th {
+  position: sticky;
+  top: 0;
+  padding: 7px 10px;
+  background: var(--bg-2);
+  color: var(--text-3);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+}
+
+.act-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.act-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.act-table tbody tr:hover {
+  background: var(--bg-2);
+}
+
+.act-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.act-note {
+  margin: 0;
+}
