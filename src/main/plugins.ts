@@ -9,3 +9,8 @@ export const pluginsApi = {
     return []
   }
 }
+
+/** JSON for `claude --mcp-config` with the project's active plugin servers, or undefined. */
+export function mcpConfigFor(_projectId: string): string | undefined {
+  return undefined
+}

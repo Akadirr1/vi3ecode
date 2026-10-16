@@ -176,7 +176,7 @@ export const DEFAULT_TEAM: Team = {
       instructions: 'Check the user-facing surface: empty, loading and error states, copy, layout and accessibility. Suggest concrete fixes; never edit.'
     }
   ],
-  routing: { autoRelay: true, returnToLead: true, hopLimit: 12 },
+  routing: { autoRelay: true, returnToLead: true, hopLimit: 12, autoApprove: false },
   budget: { turns: 0, usd: 0 }
 }
 
@@ -205,7 +205,8 @@ export function sanitizeTeam(raw: unknown): Team {
   const routing = {
     autoRelay: typeof r.autoRelay === 'boolean' ? r.autoRelay : DEFAULT_TEAM.routing.autoRelay,
     returnToLead: typeof r.returnToLead === 'boolean' ? r.returnToLead : DEFAULT_TEAM.routing.returnToLead,
-    hopLimit: Math.min(50, Math.max(1, Math.round(num(r.hopLimit, DEFAULT_TEAM.routing.hopLimit))))
+    hopLimit: Math.min(50, Math.max(1, Math.round(num(r.hopLimit, DEFAULT_TEAM.routing.hopLimit)))),
+    autoApprove: r.autoApprove === true
   }
   const budget = {
     turns: Math.min(500, Math.max(0, Math.round(num(b.turns, 0)))),

@@ -20,8 +20,17 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      // The browser panel is a <webview>; will-attach-webview below strips anything powerful from it.
+      webviewTag: true
     }
+  })
+  win.webContents.on('will-attach-webview', (_e, prefs, params) => {
+    delete prefs.preload
+    prefs.nodeIntegration = false
+    prefs.contextIsolation = true
+    prefs.sandbox = true
+    if (!/^https?:\/\//.test(params.src || 'about:blank') && params.src !== 'about:blank') params.src = 'about:blank'
   })
   win.once('ready-to-show', () => win.show())
   // External links open in the system browser, never inside the app.

@@ -352,7 +352,7 @@ function NoEngine() {
         <button className="btn" onClick={() => void ctx.refreshEngines()}>
           Re-detect engines
         </button>
-        <button className="btn primary" onClick={() => ctx.go('settings')}>
+        <button className="btn primary" onClick={() => ctx.openSettings()}>
           Open Settings
         </button>
       </div>

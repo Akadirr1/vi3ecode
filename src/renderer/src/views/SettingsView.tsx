@@ -150,7 +150,7 @@ export function SettingsView() {
               <code>.vi3ecode/team.json</code>.
             </p>
             <div>
-              <button className="btn small" onClick={() => ctx.go('team')}>
+              <button className="btn small" onClick={() => ctx.setMode('agent')}>
                 Open Agent team
               </button>
             </div>

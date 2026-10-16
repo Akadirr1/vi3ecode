@@ -130,6 +130,8 @@ export interface TeamRouting {
   returnToLead: boolean
   /** Handoffs per stretch before the chain pauses (1–50). */
   hopLimit: number
+  /** Composer switch: approval requests from agents are answered with allow (never widens read-only). */
+  autoApprove: boolean
 }
 
 export interface TeamBudget {

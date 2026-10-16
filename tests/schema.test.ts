@@ -38,7 +38,7 @@ describe('team routing, budget and handoffs', () => {
     })
     expect(t.agents[0].handoffs).toEqual(['b'])
     expect(t.agents[0].permission).toBe('edits')
-    expect(t.routing).toEqual({ autoRelay: false, returnToLead: true, hopLimit: 50 })
+    expect(t.routing).toEqual({ autoRelay: false, returnToLead: true, hopLimit: 50, autoApprove: false })
     expect(t.budget).toEqual({ turns: 0, usd: 5 })
     expect(DEFAULT_TEAM.agents.every((a) => Array.isArray(a.handoffs))).toBe(true)
   })
