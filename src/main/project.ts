@@ -1,6 +1,6 @@
 // Files under <project>/.vi3ecode/ — committed with the repo: board, notes, team, memory vault.
-import { mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { dirname, join, relative, sep } from 'node:path'
 import type { Kanban, MemoryNote, Notes, Team } from '../shared/types'
 import { MEMORY_TYPES } from '../shared/types'
 import { sanitizeBoard, sanitizeNotes, sanitizeTeam } from '../shared/schema'
@@ -9,7 +9,28 @@ import { buildIndex, extractLinks, parseMemoryWrites, parseNote, serializeNote, 
 import { getProject } from './store'
 import { readJson, writeFileAtomic, writeJson } from './fsutil'
 
-export const dataDir = (projectId: string, ...parts: string[]) => join(getProject(projectId).path, '.vi3ecode', ...parts)
+/** A path under <project>/.vi3ecode. A symlink committed there must not make us read or write outside the project. */
+export function dataDir(projectId: string, ...parts: string[]): string {
+  const root = getProject(projectId).path
+  const p = join(root, '.vi3ecode', ...parts)
+  let top: string
+  try {
+    top = realpathSync(root)
+  } catch {
+    return p // the project folder is gone: nothing there to link anywhere
+  }
+  let real = p
+  for (let dir = p; ; dir = dirname(dir)) {
+    try {
+      real = join(realpathSync(dir), relative(dir, p)) // the deepest part that exists, resolved
+      break
+    } catch {
+      if (dir === dirname(dir)) break
+    }
+  }
+  if (!real.startsWith(top + sep)) throw new Error('.vi3ecode/ links outside the project')
+  return p
+}
 
 export const boardApi = {
   async get(projectId: string): Promise<Kanban> {
@@ -50,7 +71,7 @@ export function writeTeam(projectId: string, team: Team): Team {
 
 const mdFiles = (dir: string): string[] => {
   try {
-    return readdirSync(dir).filter((f) => f.endsWith('.md') && f !== 'MEMORY.md' && SLUG_RE.test(f.slice(0, -3)))
+    return readdirSync(dir).filter((f) => f.endsWith('.md') && f !== 'MEMORY.md' && SLUG_RE.test(f.slice(0, -3)) && !lstatSync(join(dir, f)).isSymbolicLink())
   } catch {
     return []
   }

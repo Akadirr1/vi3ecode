@@ -187,7 +187,7 @@ export const DEFAULT_TEAM: Team = {
 
 export function sanitizeTeam(raw: unknown): Team {
   if (!isObj(raw) || !Array.isArray(raw.agents)) return structuredClone(DEFAULT_TEAM)
-  const agents = raw.agents.filter(isObj).slice(0, 12).map(
+  const agents = raw.agents.filter(isObj).slice(0, 50).map(
     (a, i): Agent => ({
       id: id(a.id, i),
       name: str(a.name, 40).trim() || `Agent ${i + 1}`,
@@ -199,7 +199,7 @@ export function sanitizeTeam(raw: unknown): Team {
       model: str(a.model, 80) || undefined,
       effort: str(a.effort, 20) || undefined,
       permission: approvalOf(a.permission, 'read-only'),
-      instructions: str(a.instructions, 4000),
+      instructions: str(a.instructions, 50_000), // room for long vi3ecode prompts: a save must not cut them
       lead: a.lead === true || undefined,
       handoffs: (Array.isArray(a.handoffs) ? a.handoffs : []).map((h) => str(h, 64)).filter(Boolean)
     })

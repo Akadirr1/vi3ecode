@@ -48,7 +48,8 @@ Side-by-side details: [MAPPING.md](MAPPING.md).
 - [x] Notepad (`notes.json`) with sketches and Ask AI
 - [x] Explorer (tree + preview), Git (status, diff, stage, commit, AI commit message, history)
 - [x] Browser panel + `vi3ecode-browser` MCP server (navigate, read, screenshot, click, type, scroll …) for engines
-- [x] Guardrails: four built-in rules (database, file deletion, git, system) always ask, even under Full access
+- [x] Guardrails: four built-in rules (database, file deletion, git, system) always ask, even under Full access (Flow steps cannot ask: a match is denied)
+- [x] Full access / auto-approve from a cloned repo's `agents.json` or flows count only after you save them on this machine
 - [x] Skills (`.vi3ecode/skills`, installed into `.claude/skills`, `.opencode/skill`, `AGENTS.md` block)
 - [x] Plugins with declared permissions before activation; REA built in (MCP handed to Claude Code)
 - [x] Flow (beta): task / review / human-gate steps with per-step engine and model

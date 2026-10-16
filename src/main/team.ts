@@ -13,6 +13,8 @@ import { applyMemoryWrites, listMemory, readTeam, writeTeam } from './project'
 import { getAdapter, setUsage } from './engines'
 import { ClaudeSession, type PermissionRequest } from './engines/claudeSession'
 import { runTurn, type TurnResult } from './runner'
+import { GIT_FLAGS, gitExe } from './git'
+import { effectiveTeam, trustTeam } from './trust'
 import { describe } from './chat'
 import { mcpConfigJson } from './mcp'
 import { BROWSER_ACT_TOOLS, BROWSER_READ_TOOLS } from './browserBridge'
@@ -42,6 +44,10 @@ interface RunState {
   wave?: { from: string; queue: string[]; members: string[]; note: string }
   /** Engine session per agent (resumed on its next turn) and the index of its last turn in the thread. */
   sessions: Map<string, { sessionId?: string; lastTurn: number }>
+  /** Turns of a thread run one after another: a restart waits for a stopped turn to wind down. */
+  chain?: Promise<void>
+  /** Bumped by every restart and stop; a queued launch from an older one does not start. */
+  gen: number
 }
 
 const runs = new Map<string, RunState>()
@@ -73,7 +79,7 @@ function loadAll(): void {
       for (const t of run.turns) if (t.status === 'running') t.status = 'stopped'
     }
     run.pending = []
-    runs.set(run.id, { run, hopBase: run.hops, turnBase: agentTurns(run), costBase: run.costUsd, sessions: new Map() })
+    runs.set(run.id, { run, hopBase: run.hops, turnBase: agentTurns(run), costBase: run.costUsd, sessions: new Map(), gen: 0 })
   }
 }
 
@@ -103,7 +109,7 @@ function flush(): void {
 /** `git status --porcelain` lines, or null outside a repository. */
 function gitStatus(cwd: string): Promise<Set<string> | null> {
   return new Promise((resolve) => {
-    execFile('git', ['status', '--porcelain=v1', '-uall'], { cwd, timeout: 5000, windowsHide: true }, (err, out) =>
+    execFile(gitExe(), [...GIT_FLAGS, 'status', '--porcelain=v1', '-uall'], { cwd, timeout: 5000, windowsHide: true }, (err, out) =>
       resolve(err ? null : new Set(out.split('\n').filter(Boolean)))
     )
   })
@@ -113,6 +119,7 @@ function finish(state: RunState, status: TeamRun['status']): void {
   state.run.status = status
   state.turn = undefined
   state.turnAgentId = undefined
+  if (status !== 'running') state.redirect = undefined
   save(state.run)
   push(state.run, true)
   if (status !== 'running') notify(`Agent thread ${status === 'done' ? 'finished' : status}`, state.run.goal.split('\n')[0])
@@ -200,7 +207,8 @@ async function runNext(state: RunState): Promise<void> {
   // A function, so TypeScript does not narrow away the stop() that can land during an await.
   const stopped = () => run.status === 'stopped'
   if (stopped()) return
-  const team = readTeam(run.projectId)
+  const cwd = getProject(run.projectId).path
+  const team = effectiveTeam(cwd, readTeam(run.projectId))
   const settings = getSettings()
   const { budget, routing } = team
   if (budget.usd > 0 && run.costUsd - state.costBase >= budget.usd) return finish(state, 'budget')
@@ -212,7 +220,6 @@ async function runNext(state: RunState): Promise<void> {
   const note = run.next?.note
   const from = [...run.turns].reverse().find((t) => t.kind === 'agent' && t.status !== 'running')?.agentName
   const adapter = getAdapter(agent.engine)
-  const cwd = getProject(run.projectId).path
 
   const turn: TeamTurn = { id: randomUUID(), kind: 'agent', agentId: agent.id, agentName: agent.name, engine: agent.engine, text: '', tools: [], filesTouched: [], status: 'running', startedAt: Date.now() }
   run.turns.push(turn)
@@ -282,7 +289,8 @@ async function runNext(state: RunState): Promise<void> {
 
   turn.text = r.text || turn.text
   turn.costUsd = r.costUsd
-  state.sessions.set(agent.id, { sessionId: r.sessionId ?? resumeId, lastTurn: run.turns.indexOf(turn) })
+  // A turn that failed without a session (e.g. an expired one could not be resumed) starts fresh next time.
+  state.sessions.set(agent.id, { sessionId: r.sessionId ?? (r.error ? undefined : resumeId), lastTurn: run.turns.indexOf(turn) })
   turn.endedAt = Date.now()
   const changed = new Set(r.files)
   if (before && after) for (const line of after) if (!before.has(line)) changed.add(line.slice(3).replace(/^"|"$/g, ''))
@@ -344,7 +352,7 @@ async function runNext(state: RunState): Promise<void> {
     return finish(state, 'waiting')
   }
   // Waves run their branches one after another here; results return to the issuer together.
-  if (next.agentIds.length > 1) state.wave = { from: agent.id, queue: next.agentIds.slice(1), members: next.agentIds, note: next.note }
+  state.wave = next.agentIds.length > 1 ? { from: agent.id, queue: next.agentIds.slice(1), members: next.agentIds, note: next.note } : undefined
   run.next = { agentId: next.agentIds[0], note: next.note }
   if (!routing.autoRelay) return finish(state, 'waiting')
   save(run)
@@ -352,7 +360,13 @@ async function runNext(state: RunState): Promise<void> {
 }
 
 function launch(state: RunState): void {
-  runNext(state).catch((err: unknown) => {
+  const gen = state.gen
+  const step = async () => {
+    if (gen !== state.gen) return // stopped or restarted again while waiting
+    state.run.status = 'running' // the stopped turn before us may have marked the thread stopped
+    return runNext(state)
+  }
+  state.chain = (state.chain ?? Promise.resolve()).then(step).catch((err: unknown) => {
     const t = state.run.turns.at(-1)
     if (t?.status === 'running') {
       t.status = 'error'
@@ -368,8 +382,12 @@ function restart(state: RunState, agentId: string, note: string): void {
   state.hopBase = state.run.hops
   state.turnBase = agentTurns(state.run)
   state.costBase = state.run.costUsd
+  // A half-done parallel wave only goes on when the restart continues it.
+  if (state.wave && agentId !== state.run.next?.agentId) state.wave = undefined
+  state.redirect = undefined
   state.run.next = { agentId, note }
   state.run.status = 'running'
+  state.gen++
   launch(state)
 }
 
@@ -427,7 +445,9 @@ export const globalsApi = {
   async useGlobal(projectId: string, id: string): Promise<Team> {
     const g = readGlobals().find((x) => x.id === id)
     if (!g) throw new Error('Unknown library team')
-    return writeTeam(projectId, g.team)
+    const team = writeTeam(projectId, g.team)
+    trustTeam(getProject(projectId).path, team)
+    return team
   },
   async removeGlobal(id: string): Promise<GlobalTeam[]> {
     return writeGlobals(readGlobals().filter((x) => x.id !== id))
@@ -440,7 +460,9 @@ export const teamApi = {
     return readTeam(projectId)
   },
   async save(projectId: string, team: Team): Promise<Team> {
-    return writeTeam(projectId, team)
+    const saved = writeTeam(projectId, team)
+    trustTeam(getProject(projectId).path, saved)
+    return saved
   },
   async runs(projectId: string): Promise<TeamRun[]> {
     loadAll()
@@ -465,7 +487,7 @@ export const teamApi = {
       createdAt: Date.now(),
       updatedAt: Date.now()
     }
-    const state: RunState = { run, hopBase: 0, turnBase: 0, costBase: 0, sessions: new Map() }
+    const state: RunState = { run, hopBase: 0, turnBase: 0, costBase: 0, sessions: new Map(), gen: 0 }
     runs.set(run.id, state)
     save(run)
     restart(state, target.id, '')
@@ -513,14 +535,17 @@ export const teamApi = {
   },
   async stop(runId: string): Promise<void> {
     const state = getState(runId)
+    state.gen++
     if (state.turn) {
       state.run.status = 'stopped'
       state.turn.stop()
+      push(state.run, true)
     } else if (state.run.status !== 'done') finish(state, 'stopped')
   },
   async remove(runId: string): Promise<void> {
     const state = getState(runId)
     state.run.status = 'stopped'
+    state.gen++
     state.turn?.stop()
     runs.delete(runId)
     rmSync(file(runId), { force: true })

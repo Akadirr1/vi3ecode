@@ -4,7 +4,13 @@
 'use strict'
 
 const BRIDGE = process.env.VI3E_BRIDGE_URL
-const TOKEN = process.env.VI3E_BRIDGE_TOKEN
+const TOKEN = (() => {
+  try {
+    return process.env.VI3E_BRIDGE_TOKEN_FILE ? require('fs').readFileSync(process.env.VI3E_BRIDGE_TOKEN_FILE, 'utf8').trim() : ''
+  } catch {
+    return ''
+  }
+})()
 
 const str = (description) => ({ type: 'string', description })
 const TOOLS = [

@@ -4,6 +4,14 @@ import type { GitCommit, GitStatus } from '../shared/types'
 import { getProject } from './store'
 import { insideProject } from './files'
 import { record } from './activity'
+import { findOnPath } from './engines'
+import { dirname, join } from 'node:path'
+
+let gitPath: string | null = null
+/** Absolute path to git: on Windows a bare name is looked up in the project folder first. */
+export const gitExe = () => (gitPath ??= findOnPath('git')) ?? join(dirname(process.execPath), 'not-on-path', 'git')
+/** Non-ASCII file names (öneri.md) come back as they are instead of quoted octal escapes. */
+export const GIT_FLAGS = ['-c', 'core.quotePath=false']
 
 // GIT_OPTIONAL_LOCKS=0: the panel polls status, which must not take index.lock from under an agent's own git commands.
 // diff --no-index exits 1 when the files differ, so callers can list extra exit codes that count as success.
@@ -11,7 +19,7 @@ function git(projectId: string, args: string[], input?: string, okCodes: number[
   const cwd = getProject(projectId).path
   return new Promise((resolve, reject) => {
     const opts = { cwd, timeout: 20_000, maxBuffer: 20 * 1024 * 1024, windowsHide: true, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } }
-    const child = execFile('git', args, opts, (err, out, errOut) =>
+    const child = execFile(gitExe(), [...GIT_FLAGS, ...args], opts, (err, out, errOut) =>
       err && !(typeof err.code === 'number' && okCodes.includes(err.code)) ? reject(new Error(String(errOut || err.message).trim())) : resolve(out)
     )
     if (input !== undefined) child.stdin?.end(input)

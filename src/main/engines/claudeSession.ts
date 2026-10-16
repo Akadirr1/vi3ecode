@@ -5,7 +5,9 @@ import spawn from 'cross-spawn'
 import type { ChildProcess } from 'node:child_process'
 import { isAbsolute, relative } from 'node:path'
 import type { ApprovalMode } from '../../shared/types'
-import { killTree } from '../runner'
+import { killTree, relPath, type TurnHandle, type TurnResult } from '../runner'
+import { matchGuardrail } from '../../shared/guardrails'
+import { binOf, getAdapter, spawnTarget } from './index'
 
 export interface PermissionRequest {
   id: string
@@ -26,6 +28,8 @@ export interface ClaudeTurnEnd {
   error?: string
   interrupted: boolean
   durationMs: number
+  /** The resumed session does not exist (expired or unknown id); the process exits right after. */
+  resumeFailed?: boolean
 }
 
 export interface ClaudeSessionOpts {
@@ -51,7 +55,8 @@ export interface ClaudeSessionOpts {
   onPermission(req: PermissionRequest): void
   onRateLimit?(info: Record<string, unknown>): void
   onTurnEnd(r: ClaudeTurnEnd): void
-  onExit(error?: string): void
+  /** `resumeFailed`: the process died before starting the resumed session (expired or unknown id). */
+  onExit(error?: string, resumeFailed?: boolean): void
 }
 
 const MODE: Record<ApprovalMode, string> = { 'read-only': 'dontAsk', ask: 'manual', edits: 'acceptEdits', full: 'bypassPermissions' }
@@ -93,9 +98,11 @@ export class ClaudeSession {
   /** Assistant message ids whose text already arrived as deltas (the full message repeats it). */
   private streamed = new Set<string>()
   private curMsg = ''
+  private initSeen = false
 
   constructor(private o: ClaudeSessionOpts) {
-    this.child = spawn('claude', claudeArgs(o), {
+    const target = spawnTarget(binOf(getAdapter('claude')))
+    this.child = spawn(target.command, [...target.args, ...claudeArgs(o)], {
       cwd: o.cwd,
       env: process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -141,10 +148,10 @@ export class ClaudeSession {
     this.write({ type: 'user', message: { role: 'user', content: text } })
   }
 
-  respond(requestId: string, req: PermissionRequest, allow: boolean, always = false): void {
+  respond(requestId: string, req: PermissionRequest, allow: boolean, always = false, why = 'The user denied this action in vi3ecode.'): void {
     const response = allow
       ? { behavior: 'allow', updatedInput: req.input, ...(always && req.suggestions.length ? { updatedPermissions: req.suggestions } : {}) }
-      : { behavior: 'deny', message: 'The user denied this action in vi3ecode.' }
+      : { behavior: 'deny', message: why }
     this.write({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response } })
   }
 
@@ -185,7 +192,7 @@ export class ClaudeSession {
     this.o.onTurnStart()
   }
 
-  private finishTurn(error?: string, costUsd?: number, resultText?: string): void {
+  private finishTurn(error?: string, costUsd?: number, resultText?: string, resumeFailed?: boolean): void {
     const t = this.turn
     if (!t) return
     this.turn = null
@@ -197,14 +204,15 @@ export class ClaudeSession {
       costUsd,
       error: t.interrupted ? undefined : error,
       interrupted: t.interrupted,
-      durationMs: Date.now() - t.started
+      durationMs: Date.now() - t.started,
+      ...(resumeFailed ? { resumeFailed } : {})
     })
   }
 
   private exit(error?: string): void {
     if (this.closed && error === undefined) return this.o.onExit()
     this.closed = true
-    this.o.onExit(error)
+    this.o.onExit(error, !!error && !!this.o.resumeId && !this.initSeen)
   }
 
   private handle(line: string): void {
@@ -216,6 +224,7 @@ export class ClaudeSession {
     }
     switch (e.type) {
       case 'system':
+        if (e.subtype === 'init') this.initSeen = true
         if (e.subtype === 'init' && typeof e.session_id === 'string') this.o.onSession(e.session_id)
         return
       case 'stream_event': {
@@ -249,7 +258,7 @@ export class ClaudeSession {
             const name = String(c.name ?? 'tool')
             const input = (c.input ?? {}) as Record<string, unknown>
             let file = EDIT_TOOLS.includes(name) ? String(input.file_path ?? input.notebook_path ?? '') : ''
-            if (file && isAbsolute(file)) file = relative(this.o.cwd, file)
+            if (file) file = relPath(this.o.cwd, file)
             const detail = toolDetail(input, this.o.cwd)
             this.turn!.tools.push(detail ? `${name} ${detail}` : name)
             if (file) this.turn!.files.add(file)
@@ -260,8 +269,11 @@ export class ClaudeSession {
       }
       case 'result': {
         const isError = e.is_error === true || (typeof e.subtype === 'string' && e.subtype.startsWith('error'))
-        if (typeof e.session_id === 'string') this.o.onSession(e.session_id)
-        this.finishTurn(isError ? String(e.result ?? e.subtype ?? 'error') : undefined, typeof e.total_cost_usd === 'number' ? e.total_cost_usd : undefined, typeof e.result === 'string' ? e.result : undefined)
+        // An unknown --resume id ends in an error result before any init, echoing the bad id back.
+        const resumeFailed = isError && !!this.o.resumeId && !this.initSeen
+        if (typeof e.session_id === 'string' && !resumeFailed) this.o.onSession(e.session_id)
+        const err = resumeFailed ? `No conversation found with session ID ${this.o.resumeId}.` : String(e.result ?? e.subtype ?? 'error')
+        this.finishTurn(isError ? err : undefined, typeof e.total_cost_usd === 'number' ? e.total_cost_usd : undefined, typeof e.result === 'string' ? e.result : undefined, resumeFailed)
         return
       }
       case 'rate_limit_event':
@@ -298,4 +310,50 @@ export function toolDetail(input: Record<string, unknown>, cwd: string): string 
     if (!rel.startsWith('..')) s = rel || '.'
   }
   return s.replace(/\s+/g, ' ').trim().slice(0, 300)
+}
+
+/**
+ * One Full-access turn under guardrails with nobody to ask (Flow steps): everything is allowed except what
+ * a guardrail rule matches, which is denied and explained to Claude.
+ */
+export function guardedClaudeTurn(cwd: string, o: { prompt: string; model?: string; mcpConfig?: string }, onText: (text: string, delta?: boolean) => void): TurnHandle {
+  let resolve!: (r: TurnResult) => void
+  const done = new Promise<TurnResult>((r) => (resolve = r))
+  let settled = false
+  let sessionId: string | undefined
+  const end = (r: TurnResult) => {
+    if (settled) return
+    settled = true
+    resolve({ ...r, sessionId })
+    cs.close()
+  }
+  const cs: ClaudeSession = new ClaudeSession({
+    cwd,
+    approval: 'full',
+    guarded: true,
+    model: o.model,
+    mcpConfig: o.mcpConfig,
+    onTurnStart: () => {},
+    onText,
+    onTool: () => {},
+    onSession: (id) => (sessionId = id),
+    onPermission: (req) => {
+      const rule = matchGuardrail(req.toolName, req.input)
+      cs.respond(req.id, req, !rule, false, rule ? `Blocked by the "${rule.title}" guardrail: a Flow step cannot ask the user. Find another way or stop and explain.` : undefined)
+    },
+    onTurnEnd: (r) => end({ text: r.text, tools: r.tools, files: r.files, costUsd: r.costUsd, error: r.error, stopped: r.interrupted, durationMs: r.durationMs }),
+    onExit: (error) => end({ text: '', tools: [], files: [], error: error ?? 'Claude Code exited before finishing the turn.', stopped: false, durationMs: 0 })
+  })
+  cs.send(o.prompt)
+  return {
+    done,
+    stop: () => {
+      cs.interrupt()
+      setTimeout(() => {
+        if (settled) return
+        cs.kill()
+        end({ text: '', tools: [], files: [], stopped: true, durationMs: 0 })
+      }, 3000).unref()
+    }
+  }
 }

@@ -129,9 +129,15 @@ function endTurn(s: ChatSession, r: { text: string; files: string[]; costUsd?: n
 
 // ---- Claude Code: persistent session ----
 
+/** What a Claude process was started with; a change takes effect on the next turn (a running one keeps steering). */
+const spawnSig = (s: ChatSession) => [s.approval === 'read-only', s.model, s.effort, getSettings().guardrails, getSettings().browserTools].join('|')
+const sigs = new Map<string, string>()
+
 function claudeFor(s: ChatSession): ClaudeSession {
   const existing = claude.get(s.id)
-  if (existing?.alive) return existing
+  if (existing?.alive && (existing.busy || sigs.get(s.id) === spawnSig(s))) return existing
+  existing?.close()
+  sigs.set(s.id, spawnSig(s))
   const cwd = getProject(s.projectId).path
   const cs: ClaudeSession = new ClaudeSession({
     cwd,
@@ -170,11 +176,12 @@ function claudeFor(s: ChatSession): ClaudeSession {
     },
     onTurnEnd: (r) => {
       dropPending(s, cs)
-      endTurn(s, { ...r, stopped: r.interrupted })
+      endTurn(s, { ...r, error: r.resumeFailed ? forgetSession(s, cs, r.error) : r.error, stopped: r.interrupted })
     },
-    onExit: (error) => {
+    onExit: (error, resumeFailed) => {
       if (claude.get(s.id) === cs) claude.delete(s.id)
       dropPending(s, cs)
+      if (resumeFailed) error = forgetSession(s, cs, error)
       if (error && active.has(s.id)) endTurn(s, { text: '', files: [], error, stopped: false, durationMs: 0 })
     }
   })
@@ -195,6 +202,14 @@ function dropPending(s: ChatSession, cs: ClaudeSession): void {
     requests.delete(p.id)
   }
   s.pending = []
+}
+
+/** Expired or unknown Claude session: drop it (and its dying process) so the next message starts fresh with the chat's history. */
+function forgetSession(s: ChatSession, cs: ClaudeSession, error?: string): string {
+  s.engineSessionId = undefined
+  if (claude.get(s.id) === cs) closeClaude(s.id)
+  save(s)
+  return `${error ?? 'Claude Code exited.'}\n\nThe previous Claude session could not be resumed. Send your message again to continue with this chat's history.`
 }
 
 function closeClaude(id: string): void {
@@ -239,6 +254,7 @@ function startTurn(s: ChatSession, userMsg: ChatMessage): void {
   void handle.done.then((r) => {
     running.delete(s.id)
     if (r.sessionId) s.engineSessionId = r.sessionId
+    else if (r.error && canResume) s.engineSessionId = undefined // a session that failed to resume would fail every turn
     endTurn(s, r)
     const next = queues.get(s.id)?.shift()
     const nextMsg = next ? s.messages.find((m) => m.id === next) : undefined
@@ -293,9 +309,9 @@ export const chatApi = {
       const next: ApprovalMode = approvalOf(patch.approval, s.approval)
       const cs = claude.get(id)
       // read-only also removes tools from the process, so crossing it needs a fresh process.
-      if (cs && (next === 'read-only') !== (s.approval === 'read-only')) {
-        if (!cs.busy) closeClaude(id)
-      } else cs?.setApproval(next)
+      // A busy one switches mode now and is replaced after the turn (claudeFor compares spawnSig).
+      if (cs && (next === 'read-only') !== (s.approval === 'read-only') && !cs.busy) closeClaude(id)
+      else cs?.setApproval(next)
       s.approval = next
     }
     for (const k of ['model', 'effort'] as const) {
@@ -322,8 +338,9 @@ export const chatApi = {
     s.messages.push(msg)
     if (s.title === 'New chat') s.title = body.split('\n')[0].slice(0, 60)
     if (s.engine === 'claude') {
-      const fresh = !claude.get(id)?.alive
+      const before = claude.get(id)
       const cs = claudeFor(s)
+      const fresh = cs !== before
       if (cs.busy) {
         msg.status = 'steered' // folded into the running turn
         cs.send(msg.text)
@@ -370,6 +387,8 @@ export const chatApi = {
     if (cs) {
       dropPending(s, cs)
       cs.interrupt()
+      // A process stuck in a tool may never answer the interrupt.
+      setTimeout(() => cs.busy && cs.kill(), 3000).unref()
     }
     push(s, true)
   },

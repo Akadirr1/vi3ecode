@@ -51,7 +51,11 @@ export const GUARDRAILS: GuardrailRule[] = [
       /\bgit\s+clean\s+-[a-z]*[df]/i,
       /\bgit\s+push\b[^|;&]*\s(--delete|-d)\b/i,
       /\bgit\s+stash\s+(drop|clear)\b/i,
-      /\bgit\s+filter-branch\b/i
+      /\bgit\s+filter-branch\b/i,
+      /\bgit\s+checkout\b[^|;&]*\s(--\s+)?\.(\s|$)/i,
+      /\bgit\s+restore\b(?![^|;&]*--staged\b)/i,
+      /\bgit\s+branch\s+[^|;&]*-D\b/,
+      /\bgit\s+push\b[^|;&]*\s\+\S/i
     ]
   },
   {

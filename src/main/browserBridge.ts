@@ -3,9 +3,10 @@
 import { app, webContents, type WebContents } from 'electron'
 import { createServer, type Server } from 'node:http'
 import { randomBytes } from 'node:crypto'
-import { join } from 'node:path'
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { emit } from './events'
-import { getSettings } from './store'
+import { getSettings, userDir } from './store'
 
 let guest: WebContents | null = null
 let server: Server | null = null
@@ -162,6 +163,14 @@ async function run(name: string, args: Record<string, unknown>): Promise<unknown
 
 export function startBrowserBridge(): void {
   if (server) return
+  // Engines put MCP env on their command line, which other local users can read; only the file's path goes there.
+  try {
+    mkdirSync(dirname(tokenFile()), { recursive: true })
+    writeFileSync(tokenFile(), token, { mode: 0o600 })
+    chmodSync(tokenFile(), 0o600)
+  } catch {
+    return // no bridge: engines simply get no browser tools
+  }
   server = createServer((req, res) => {
     const reply = (code: number, body: unknown) => {
       res.writeHead(code, { 'content-type': 'application/json' })
@@ -190,6 +199,7 @@ export function stopBrowserBridge(): void {
   server = null
 }
 
+const tokenFile = () => userDir('bridge-token')
 const shimPath = () => (app.isPackaged ? join(process.resourcesPath, 'mcp-shim.cjs') : join(app.getAppPath(), 'resources', 'mcp-shim.cjs'))
 
 /** The MCP server entry handed to engines, or undefined when browser tools are off or the bridge is down. */
@@ -198,7 +208,7 @@ export function browserMcpServer(): Record<string, unknown> | undefined {
   return {
     command: process.execPath,
     args: [shimPath()],
-    env: { ELECTRON_RUN_AS_NODE: '1', VI3E_BRIDGE_URL: `http://127.0.0.1:${port}`, VI3E_BRIDGE_TOKEN: token }
+    env: { ELECTRON_RUN_AS_NODE: '1', VI3E_BRIDGE_URL: `http://127.0.0.1:${port}`, VI3E_BRIDGE_TOKEN_FILE: tokenFile() }
   }
 }
 

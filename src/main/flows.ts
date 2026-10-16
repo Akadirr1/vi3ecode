@@ -11,11 +11,14 @@ import { readJson, writeJson } from './fsutil'
 import { getAdapter } from './engines'
 import { mcpConfigJson } from './mcp'
 import { runTurn, type TurnHandle } from './runner'
+import { guardedClaudeTurn } from './engines/claudeSession'
 import { emit, notify } from './events'
 import { record } from './activity'
+import { dataDir } from './project'
+import { effectiveFlow, trustFlow } from './trust'
 
 const ID_RE = /^[\w-]{1,64}$/
-const flowDir = (projectId: string) => join(getProject(projectId).path, '.vi3ecode', 'flows')
+const flowDir = (projectId: string) => dataDir(projectId, 'flows')
 const runFile = (id: string) => userDir('flow-runs', `${id}.json`)
 
 interface Live {
@@ -82,11 +85,17 @@ async function execute(l: Live): Promise<void> {
     const engine = step.engine ?? getSettings().defaultEngine
     let error: string | undefined
     try {
-      l.turn = runTurn(getAdapter(engine), l.cwd, { prompt: stepPrompt(flow, i, run.steps.slice(0, i)), model: step.model, approval: step.approval ?? 'edits', mcpConfig: mcpConfigJson(run.projectId) }, (e) => {
-        if (e.type !== 'text') return
-        rs.text = e.delta || !rs.text ? rs.text + e.text : `${rs.text}\n\n${e.text}`
+      const prompt = stepPrompt(flow, i, run.steps.slice(0, i))
+      const approval = step.approval ?? 'edits'
+      const onText = (text: string, delta?: boolean) => {
+        rs.text = delta || !rs.text ? rs.text + text : `${rs.text}\n\n${text}`
         update(run, false)
-      })
+      }
+      // Claude's own Full access mode skips every prompt, guardrails included; guarded it runs in manual mode.
+      l.turn =
+        engine === 'claude' && approval === 'full' && getSettings().guardrails
+          ? guardedClaudeTurn(l.cwd, { prompt, model: step.model, mcpConfig: mcpConfigJson(run.projectId) }, onText)
+          : runTurn(getAdapter(engine), l.cwd, { prompt, model: step.model, approval, mcpConfig: mcpConfigJson(run.projectId) }, (e) => e.type === 'text' && onText(e.text, e.delta))
       const r = await l.turn.done
       l.turn = undefined
       rs.text = r.text || rs.text
@@ -131,6 +140,7 @@ export const flowsApi = {
   async save(projectId: string, flow: Flow): Promise<Flow> {
     const clean = sanitizeFlow({ ...flow, updatedAt: Date.now() })
     writeJson(join(flowDir(projectId), `${clean.id}.json`), clean)
+    trustFlow(getProject(projectId).path, clean)
     return clean
   },
   async remove(projectId: string, id: string): Promise<void> {
@@ -153,8 +163,9 @@ export const flowsApi = {
       .slice(0, 30)
   },
   async run(projectId: string, flowId: string): Promise<FlowRun> {
-    const flow = readFlows(projectId).find((f) => f.id === checkId(flowId))
-    if (!flow) throw new Error('Flow not found')
+    const found = readFlows(projectId).find((f) => f.id === checkId(flowId))
+    if (!found) throw new Error('Flow not found')
+    const flow = effectiveFlow(getProject(projectId).path, found)
     if (!flow.steps.length) throw new Error('Add at least one step before running the flow.')
     const now = Date.now()
     const run: FlowRun = {

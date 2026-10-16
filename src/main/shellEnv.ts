@@ -5,6 +5,8 @@ import { execFileSync } from 'node:child_process'
  * via npm/brew/nvm are not found. Ask the user's login shell for its PATH once at startup.
  */
 export function loadShellPath(): void {
+  // launchd gives GUI apps no locale: terminals and CLIs would run in C/ASCII and mangle ş, ğ, ı.
+  if (process.platform === 'darwin' && !process.env.LANG && !process.env.LC_ALL && !process.env.LC_CTYPE) process.env.LANG = 'en_US.UTF-8'
   if (process.platform === 'win32') return
   const shell = process.env.SHELL || '/bin/bash'
   try {

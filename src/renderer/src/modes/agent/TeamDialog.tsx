@@ -66,7 +66,11 @@ export function TeamDialog({ initial, onClose }: { initial?: string; onClose(): 
 
   useEffect(() => {
     box.current?.focus()
-    const onKey = (e: globalThis.KeyboardEvent) => e.key === 'Escape' && closeRef.current()
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur() // a NumField commits on blur; do it before close flushes
+      closeRef.current()
+    }
     window.addEventListener('keydown', onKey)
     return () => {
       window.removeEventListener('keydown', onKey)
@@ -210,7 +214,7 @@ function AgentDetail({ team, agent, working, run, update, onClose, onRemoved }: 
         <input className="td-desc" value={agent.description} maxLength={300} placeholder={t('One line on what this agent does')} aria-label={t('Description')} onChange={(e) => patch({ description: e.target.value })} />
         <label className="field">
           <span className="micro">{t('Instructions')}</span>
-          <textarea className="textarea td-instructions" value={agent.instructions} maxLength={4000} onChange={(e) => patch({ instructions: e.target.value })} />
+          <textarea className="textarea td-instructions" value={agent.instructions} maxLength={50000} onChange={(e) => patch({ instructions: e.target.value })} />
         </label>
         <div className="td-grid">
           <div className="col td-colgap">
@@ -351,7 +355,7 @@ function NewAgent({ team, onAdd, onCancel }: { team: Team; onAdd(a: Agent): void
         </div>
         <label className="field">
           <span className="micro">{t('Instructions')}</span>
-          <textarea className="textarea td-instructions" value={form.instructions} maxLength={4000} placeholder={t('What this agent owns, what it must never do, and when it hands off…')} onChange={(e) => set({ instructions: e.target.value })} />
+          <textarea className="textarea td-instructions" value={form.instructions} maxLength={50000} placeholder={t('What this agent owns, what it must never do, and when it hands off…')} onChange={(e) => set({ instructions: e.target.value })} />
         </label>
       </div>
       <div className="modal-foot td-foot">

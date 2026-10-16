@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, session, shell } from 'electron'
 import { join } from 'node:path'
 import { registerIpc } from './ipc'
 import { killAllPtys } from './pty'
@@ -60,6 +60,11 @@ app.on('web-contents-created', (_e, contents) => {
 })
 
 app.whenReady().then(() => {
+  // Pages in the browser panel get no camera, microphone, location, notifications or clipboard reads.
+  const web = session.fromPartition('persist:vi3e-browser')
+  const allowed = new Set(['clipboard-sanitized-write', 'fullscreen'])
+  web.setPermissionRequestHandler((_wc, permission, cb) => cb(allowed.has(permission)))
+  web.setPermissionCheckHandler((_wc, permission) => allowed.has(permission))
   loadShellPath()
   registerIpc()
   startBrowserBridge()

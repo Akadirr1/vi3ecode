@@ -6,6 +6,7 @@ import { useApp } from '../context'
 import { Avatar } from '../components/Avatar'
 import { relativeTime } from '../components/format'
 import { t } from '../i18n'
+import { setTeam } from '../modes/agent/store'
 
 /** Global agents: save this project's team to the app library, or put a saved team on this project. */
 export function GlobalsTool(_: { docked: boolean }) {
@@ -22,7 +23,7 @@ export function GlobalsTool(_: { docked: boolean }) {
   }
   const use = async (g: GlobalTeam) => {
     if (!confirm(t('Replace the team of {project} with "{name}"? Who-hands-off-to-whom is reset.', { project: project.name, name: g.name }))) return
-    await api.team.useGlobal(project.id, g.id)
+    setTeam(project.id, await api.team.useGlobal(project.id, g.id)) // the agent store caches the team; a stale copy would be saved over this one
     setNote(t('"{name}" is now this project\'s team.', { name: g.name }))
     setMode('agent')
   }

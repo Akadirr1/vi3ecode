@@ -43,7 +43,7 @@ const splitTargets = (list: string) =>
 
 export function parseTurnEnd(text: string, names: string[]): TurnEnd {
   const lines = text.split(/\r?\n/).filter((l) => l.trim())
-  for (const line of lines.slice(-15).reverse()) {
+  for (const [i, line] of lines.slice(-15).reverse().entries()) {
     const at = AT_LINE.exec(line)
     if (at) {
       const kind = at[1].toLowerCase()
@@ -54,7 +54,8 @@ export function parseTurnEnd(text: string, names: string[]): TurnEnd {
       if (to.length) return { handoff: { to, note: rest } }
       continue
     }
-    const m = LEGACY.exec(line)
+    // Legacy lines count only as the very last line: a "**Done:** x" status line mid-report is not an ending.
+    const m = i === 0 ? LEGACY.exec(line) : null
     if (!m) continue
     const rest = m[2].replace(/[*_`]+$/g, '').trim()
     if (m[1].toUpperCase() === 'DONE') return { done: rest || 'Done.' }

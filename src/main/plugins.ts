@@ -55,8 +55,12 @@ export function parseActive(raw: unknown): string[] {
 
 export type McpServers = Record<string, { command: string; args: string[] }>
 
-const resolveMcp = (p: CatalogEntry, projectPath: string) =>
-  p.mcp && { command: p.mcp.command, args: p.mcp.args.map((a) => (a === '{project}' ? projectPath : a)) }
+/** Engines start MCP servers without a shell; on Windows `npx` is npx.cmd, which only cmd can run. */
+const resolveMcp = (p: CatalogEntry, projectPath: string) => {
+  if (!p.mcp) return undefined
+  const args = p.mcp.args.map((a) => (a === '{project}' ? projectPath : a))
+  return process.platform === 'win32' ? { command: 'cmd', args: ['/c', p.mcp.command, ...args] } : { command: p.mcp.command, args }
+}
 
 /** Server entries for the given plugin ids; named vi3ecode-<id> so they never clash with the user's own servers. */
 export function serversFor(ids: string[], projectPath: string): McpServers {

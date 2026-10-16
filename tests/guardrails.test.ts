@@ -13,9 +13,12 @@ describe('guardrails', () => {
     expect(bash('npx prisma migrate reset')).toBe('db-destructive')
     expect(bash('sudo rm /etc/hosts')).toBe('system-destructive')
     expect(bash('dd if=x.img of=/dev/disk2')).toBe('system-destructive')
+    for (const c of ['git checkout -- .', 'git checkout .', 'git restore .', 'git restore --worktree src', 'git branch -D old', 'git push origin +main']) {
+      expect(bash(c), c).toBe('git-destructive')
+    }
   })
   it('lets ordinary work through', () => {
-    for (const c of ['npm test', 'git status', 'git push origin feature', 'rm notes.txt', 'ls -la']) {
+    for (const c of ['npm test', 'git status', 'git push origin feature', 'rm notes.txt', 'ls -la', 'git checkout main', 'git checkout -b feat', 'git restore --staged a.ts', 'git branch -d merged']) {
       expect(bash(c), c).toBeNull()
     }
   })

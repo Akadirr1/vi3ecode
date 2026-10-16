@@ -1,6 +1,7 @@
 // Browser panel captures: the renderer sends a PNG data URL, we store it in the project so any engine can read it by path.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dataDir } from './project'
+import { writeFileAtomic } from './fsutil'
 
 export const browserApi = {
   async saveCapture(projectId: string, dataUrl: string): Promise<string> {
@@ -11,7 +12,7 @@ export const browserApi = {
     const name = `capture-${new Date().toISOString().replace(/[:.]/g, '-')}.png`
     mkdirSync(dataDir(projectId, 'captures'), { recursive: true })
     // Captures are scratch input for engines, not project history: keep them out of git status and "Stage all".
-    writeFileSync(dataDir(projectId, 'captures', '.gitignore'), '*\n')
+    writeFileAtomic(dataDir(projectId, 'captures', '.gitignore'), '*\n') // rename replaces a planted symlink instead of following it
     writeFileSync(dataDir(projectId, 'captures', name), buf)
     return `.vi3ecode/captures/${name}`
   }

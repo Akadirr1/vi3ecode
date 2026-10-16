@@ -22,6 +22,8 @@ describe('parseTurnEnd', () => {
     expect(parseTurnEnd('HANDOFF: Developer — implement it', names)).toEqual({ handoff: { to: ['Developer'], note: 'implement it' } })
     expect(parseTurnEnd('**handoff:** to @qa: review the patch', names).handoff).toEqual({ to: ['QA'], note: 'review the patch' })
     expect(parseTurnEnd('HANDOFF: QA Lead - sign off', ['QA', 'QA Lead']).handoff).toEqual({ to: ['QA Lead'], note: 'sign off' })
+    // A status line in the middle of a report is not an ending.
+    expect(parseTurnEnd('Status\n\n**Done:** wired the login form\n**Remaining:** tests\n\nI still need the API contract.', names)).toEqual({})
   })
   it('takes the last protocol line and returns nothing without one', () => {
     expect(parseTurnEnd('@handoff qa: check\nQA approved.\n@done: ok', names)).toEqual({ done: 'ok' })

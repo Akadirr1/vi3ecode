@@ -78,7 +78,10 @@ function engineLaunch(projectId: string, engine: EngineId, model?: string, effor
     }
   }
   // `clear` first: the pane opens on the engine's UI rather than on the long command line typed to start it.
-  const command = `clear; ${[binOf(adapter), ...args].map((a) => shellQuote(a)).join(' ')}`
+  // PowerShell runs a quoted path only with `&`; the full path to the .cmd also skips npm's .ps1 shim,
+  // which the default Restricted execution policy refuses to run.
+  const call = process.platform === 'win32' ? '& ' : ''
+  const command = `clear; ${call}${[binOf(adapter), ...args].map((a) => shellQuote(a)).join(' ')}`
   return { command, label: adapter.label, model: m, effort: e }
 }
 

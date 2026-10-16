@@ -1,9 +1,9 @@
 // Runs one non-interactive engine turn and normalizes its stream.
 import spawn from 'cross-spawn'
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
-import { isAbsolute, relative } from 'node:path'
+import { isAbsolute, relative, sep } from 'node:path'
 import type { EngineAdapter, EngineEvent, TurnOpts } from './engines/types'
-import { binOf } from './engines'
+import { binOf, spawnTarget } from './engines'
 
 export interface TurnResult {
   text: string
@@ -44,7 +44,13 @@ export function runTurn(
   let spawnError: string | undefined
 
   const bin = binOf(adapter)
-  const child: ChildProcess = spawn(bin, inv.args, {
+  const target = spawnTarget(bin)
+  // cmd.exe re-parses a .cmd launcher's arguments: a quote, % or newline in a prompt can end it early or run as a command.
+  if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(target.command) && inv.args.some((a) => /["%\r\n]/.test(a))) {
+    const error = `${adapter.label} starts through a .cmd launcher on Windows, which cannot pass this prompt safely. Use it from Terminal Mode.`
+    return { done: Promise.resolve({ text: '', tools: [], files: [], error, stopped: false, durationMs: 0 }), stop() {} }
+  }
+  const child: ChildProcess = spawn(target.command, [...target.args, ...inv.args], {
     cwd,
     env: process.env,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -63,7 +69,7 @@ export function runTurn(
     }
     else if (e.type === 'tool') {
       tools.push(e.name)
-      if (e.file) files.add(isAbsolute(e.file) ? relative(cwd, e.file) : e.file)
+      if (e.file) files.add(relPath(cwd, e.file))
     } else if (e.type === 'session') sessionId = e.id
     else if (e.type === 'result') {
       resultText = e.text
@@ -91,7 +97,7 @@ export function runTurn(
 
   const done = new Promise<TurnResult>((resolve) => {
     child.on('error', (err: NodeJS.ErrnoException) => {
-      spawnError = err.code === 'ENOENT' ? `${bin} was not found on PATH. ${adapter.installHint}` : err.message
+      spawnError = err.code === 'ENOENT' ? `${adapter.label} was not found on PATH. ${adapter.installHint}` : err.message
     })
     child.on('close', (code) => {
       if (buf.trim()) for (const e of parse(buf)) handle(e)
@@ -101,8 +107,8 @@ export function runTurn(
       if (!stopped) {
         if (spawnError) error = spawnError
         else if (resultError) error = resultText || 'The engine reported an error.'
-        else if (code !== 0 && code !== null) error = lastLines(stderr) || `${bin} exited with code ${code}`
-        else if (code === null && !text) error = lastLines(stderr) || `${bin} was terminated`
+        else if (code !== 0 && code !== null) error = lastLines(stderr) || `${adapter.label} exited with code ${code}`
+        else if (code === null && !text) error = lastLines(stderr) || `${adapter.label} was terminated`
       }
       resolve({ text, tools, files: [...files], costUsd, sessionId, error, stopped, durationMs: Date.now() - started })
     })
@@ -111,9 +117,9 @@ export function runTurn(
   return {
     done,
     stop() {
-      if (stopped || child.exitCode !== null) return
+      if (stopped) return
       stopped = true
-      killTree(child)
+      killTree(child) // also when the engine itself exited: its process group may still hold the pipes open
     }
   }
 }
@@ -122,9 +128,16 @@ function lastLines(s: string, n = 6): string {
   return s.trim().split('\n').slice(-n).join('\n')
 }
 
+/** Project-relative path with forward slashes on every OS (git reports them that way too). */
+export function relPath(cwd: string, file: string): string {
+  return (isAbsolute(file) ? relative(cwd, file) : file).split(sep).join('/')
+}
+
 export function killTree(child: ChildProcess): void {
   if (!child.pid) return
   if (process.platform === 'win32') {
+    // taskkill works by pid: once the process is gone the pid may already belong to someone else.
+    if (child.exitCode !== null || child.signalCode !== null) return
     nodeSpawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }).on('error', () => child.kill())
     return
   }

@@ -44,6 +44,16 @@ export function App() {
   const [chatIntent, setChatIntent] = useState<(Intent & { append?: boolean }) | null>(null)
   const [terminalIntent, setTerminalIntent] = useState<Intent | null>(null)
 
+  // One tool lives in one place: docking it closes it in the main area and vice versa, so two instances never fight over saves.
+  const dockTool = (next: Tool | null) => {
+    if (next) openTool((cur) => (cur === next ? null : cur))
+    setDock(next)
+  }
+  const showTool = (next: Tool | null) => {
+    if (next) setDock((cur) => (cur === next ? null : cur))
+    openTool(next)
+  }
+
   useEffect(() => {
     void api.projects.list().then(setProjects)
     void api.settings.get().then(setSettingsState)
@@ -51,7 +61,7 @@ export function App() {
     // Usage meters arrive with Claude turns; refresh the list now and then without re-detecting.
     const tick = setInterval(() => void api.engines.list().then(setEngines), 30_000)
     // An engine asked for the browser panel (vi3ecode-browser MCP): open it so its webview can register.
-    const off = api.browser.onOpen(() => setDock('browser'))
+    const off = api.browser.onOpen(() => dockTool('browser'))
     return () => (clearInterval(tick), off())
   }, [])
 
@@ -96,6 +106,11 @@ export function App() {
   }
 
   const closeTab = (id: string) => {
+    if (id === project?.id) {
+      openTool(null)
+      setChatId(null)
+      setRunId(null)
+    }
     if (settings) void setSettings({ openProjects: settings.openProjects.filter((x) => x !== id) })
   }
 
@@ -123,9 +138,9 @@ export function App() {
         openTool(null)
       },
       tool,
-      openTool,
+      openTool: showTool,
       dock,
-      setDock,
+      setDock: dockTool,
       openSettings: () => setSettingsOpen(true),
       openTools: () => setToolsOpen(true),
       chatId,
@@ -172,7 +187,7 @@ export function App() {
           onSelect={selectProject}
           onClose={closeTab}
           onAdd={openFolder}
-          onToggleDock={() => setDock(dock ? null : 'explorer')}
+          onToggleDock={() => dockTool(dock ? null : 'explorer')}
         />
         <div className="body" style={{ gridTemplateColumns: `var(--sidebar-w) minmax(0, 1fr) ${dock ? 'auto' : '0px'} var(--rail-w)` }}>
           <Sidebar>
@@ -186,7 +201,7 @@ export function App() {
             <div className="view" hidden={mode !== 'terminal' || !!tool}>
               <TerminalMain key={ctx.project.id} active={mode === 'terminal' && !tool} />
             </div>
-            {tool ? <ToolView tool={tool} docked={false} /> : null}
+            {tool ? <ToolView key={ctx.project.id} tool={tool} docked={false} /> : null}
             {!tool && mode === 'chat' && <ChatMain key={ctx.project.id} />}
             {!tool && mode === 'agent' && <AgentMain key={ctx.project.id} />}
           </main>
