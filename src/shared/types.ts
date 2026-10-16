@@ -153,6 +153,14 @@ export interface Team {
   budget: TeamBudget
 }
 
+/** A team kept in the app-level library (vi3ecode's "Global agents"); handoffs live only in project teams. */
+export interface GlobalTeam {
+  id: string
+  name: string
+  savedAt: number
+  team: Team
+}
+
 export type TurnStatus = 'running' | 'done' | 'error' | 'stopped'
 
 export interface TeamTurn {
@@ -487,6 +495,11 @@ export interface Api {
     respond(runId: string, approvalId: string, allow: boolean): Promise<void>
     stop(runId: string): Promise<void>
     remove(runId: string): Promise<void>
+    /** Global agents: teams saved for reuse in other projects. */
+    globals(): Promise<GlobalTeam[]>
+    saveGlobal(projectId: string, name: string): Promise<GlobalTeam[]>
+    useGlobal(projectId: string, id: string): Promise<Team>
+    removeGlobal(id: string): Promise<GlobalTeam[]>
     onRun(cb: (run: TeamRun) => void): Unsubscribe
   }
   board: {

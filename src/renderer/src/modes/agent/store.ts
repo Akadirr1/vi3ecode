@@ -78,7 +78,7 @@ export const RUN_STATUS: Record<RunStatus, [string, string]> = {
   'hop-cap': ['hop limit', 'warn']
 }
 
-export const errorText = (e: unknown): string => String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+export { errorText } from '../../components/format'
 
 /** Agent text without the protocol line the handoff / done card already shows. */
 export const stripProtocol = (text: string): string =>

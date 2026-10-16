@@ -4,7 +4,7 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readdirSync, rmSync } from 'node:fs'
-import type { Agent, Team, TeamRun, TeamTurn } from '../shared/types'
+import type { Agent, GlobalTeam, Team, TeamRun, TeamTurn } from '../shared/types'
 import { buildBrief, WRITE_BACK_INSTRUCTION } from '../shared/memory'
 import { buildTeamPrompt, decideNext, findAgent, leadOf, parseTurnEnd } from '../shared/prompt'
 import { matchGuardrail } from '../shared/guardrails'
@@ -19,6 +19,7 @@ import { BROWSER_ACT_TOOLS, BROWSER_READ_TOOLS } from './browserBridge'
 import { emit, notify } from './events'
 import { record, registerLive } from './activity'
 import { readJson, writeJson } from './fsutil'
+import { sanitizeTeam } from '../shared/schema'
 
 interface AgentTurn {
   done: Promise<TurnResult>
@@ -393,7 +394,47 @@ const userTurn = (text: string, to?: Agent): TeamTurn => ({
   endedAt: Date.now()
 })
 
+// ---- Global agents: app-level library of teams (agents/global-agents.json), without handoffs ----
+
+const globalsFile = () => userDir('agents', 'global-agents.json')
+
+function readGlobals(): GlobalTeam[] {
+  const raw = readJson<{ teams?: unknown[] }>(globalsFile(), {})
+  return (Array.isArray(raw.teams) ? raw.teams : []).flatMap((x) => {
+    const g = x as Partial<GlobalTeam>
+    if (!g || typeof g.id !== 'string' || !ID_RE.test(g.id)) return []
+    return [{ id: g.id, name: String(g.name ?? 'Team').slice(0, 80), savedAt: Number(g.savedAt) || 0, team: sanitizeTeam(g.team) }]
+  })
+}
+
+function writeGlobals(list: GlobalTeam[]): GlobalTeam[] {
+  mkdirSync(userDir('agents'), { recursive: true })
+  writeJson(globalsFile(), { version: 1, teams: list })
+  return list
+}
+
+export const globalsApi = {
+  async globals(): Promise<GlobalTeam[]> {
+    return readGlobals()
+  },
+  async saveGlobal(projectId: string, name: string): Promise<GlobalTeam[]> {
+    const team = readTeam(projectId)
+    // Library entries are role templates: who hands off to whom belongs to a project team.
+    const entry: GlobalTeam = { id: randomUUID(), name: String(name || 'Team').trim().slice(0, 80) || 'Team', savedAt: Date.now(), team: { ...team, agents: team.agents.map((a) => ({ ...a, handoffs: [] })) } }
+    return writeGlobals([entry, ...readGlobals()].slice(0, 50))
+  },
+  async useGlobal(projectId: string, id: string): Promise<Team> {
+    const g = readGlobals().find((x) => x.id === id)
+    if (!g) throw new Error('Unknown library team')
+    return writeTeam(projectId, g.team)
+  },
+  async removeGlobal(id: string): Promise<GlobalTeam[]> {
+    return writeGlobals(readGlobals().filter((x) => x.id !== id))
+  }
+}
+
 export const teamApi = {
+  ...globalsApi,
   async get(projectId: string): Promise<Team> {
     return readTeam(projectId)
   },

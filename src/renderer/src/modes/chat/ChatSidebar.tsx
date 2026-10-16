@@ -6,7 +6,7 @@ import { useApp } from '../../context'
 import { EngineIcon } from '../../components/EngineIcon'
 import { relativeTime } from '../../components/format'
 import { t } from '../../i18n'
-import { errorText } from './ChatMain'
+import { errorText } from '../../components/format'
 import './chat-mode.css'
 
 // shortcut: ChatSummary has no model yet, so it only shows once a session push arrives; add `model` to chat.list to fix.

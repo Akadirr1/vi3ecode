@@ -1,4 +1,4 @@
-import { Activity, Blocks, BookOpenText, FolderOpen, Globe, GitBranch, KanbanSquare, Library, NotebookPen, Waypoints, type LucideIcon } from 'lucide-react'
+import { Activity, Blocks, UsersRound, BookOpenText, FolderOpen, Globe, GitBranch, KanbanSquare, Library, NotebookPen, Waypoints, type LucideIcon } from 'lucide-react'
 import { useApp, type Tool } from '../context'
 import { t } from '../i18n'
 
@@ -12,6 +12,7 @@ export const TOOL_META: Record<Tool, { label: string; icon: LucideIcon; hint: st
   flow: { label: 'Flow', icon: Waypoints, hint: 'Goals, tasks, reviews and human gates in one run' },
   skills: { label: 'Skills', icon: BookOpenText, hint: 'Portable instruction packs for every engine' },
   plugins: { label: 'Plugins', icon: Blocks, hint: 'Extensions with declared permissions' },
+  globals: { label: 'Global agents', icon: UsersRound, hint: 'Roles and teams you keep for the next project' },
   activity: { label: 'Activity', icon: Activity, hint: 'What ran and how it turned out' }
 }
 

@@ -5,7 +5,7 @@ import { api } from '../../api'
 import { useApp, usableEngines } from '../../context'
 import { EngineIcon } from '../../components/EngineIcon'
 import { Prose } from '../../components/Prose'
-import { formatCost, formatDuration } from '../../components/format'
+import { errorText, formatCost, formatDuration } from '../../components/format'
 import { t } from '../../i18n'
 import { Composer, type ChatConfig } from './Composer'
 import './chat-mode.css'
@@ -14,8 +14,6 @@ import './chat-mode.css'
 const drafts = new Map<string, string>()
 // Intents outlive this view (App never clears them), so remember the handled one across remounts.
 let handledIntent = 0
-
-export const errorText = (e: unknown) => String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 
 export function ChatMain() {
   const ctx = useApp()

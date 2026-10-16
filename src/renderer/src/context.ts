@@ -2,7 +2,7 @@ import { createContext, useContext } from 'react'
 import type { EngineInfo, Project, Settings } from '../../shared/types'
 
 export type Mode = 'chat' | 'terminal' | 'agent'
-export type Tool = 'explorer' | 'browser' | 'git' | 'board' | 'notes' | 'memory' | 'flow' | 'skills' | 'plugins' | 'activity'
+export type Tool = 'explorer' | 'browser' | 'git' | 'board' | 'notes' | 'memory' | 'flow' | 'skills' | 'plugins' | 'activity' | 'globals'
 
 /** A one-shot request from another view; `nonce` changes on every request. */
 export interface Intent {

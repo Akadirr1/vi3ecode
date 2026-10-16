@@ -23,3 +23,6 @@ export const APPROVAL_LABEL: Record<string, { label: string; hint: string }> = {
   edits: { label: 'Approve edits', hint: 'Auto-approve file edits; other actions ask' },
   full: { label: 'Full access', hint: "Uses the engine's permission bypass mode; guardrails and engine restrictions may apply" }
 }
+
+/** Error text from a failed IPC call, without Electron's "Error invoking remote method" prefix. */
+export const errorText = (e: unknown): string => String(e instanceof Error ? e.message : e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')

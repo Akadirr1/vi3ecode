@@ -12,6 +12,7 @@ import { FlowTool } from '../tools/FlowTool'
 import { SkillsTool } from '../tools/SkillsTool'
 import { PluginsTool } from '../tools/PluginsTool'
 import { ActivityTool } from '../tools/ActivityTool'
+import { GlobalsTool } from '../tools/GlobalsTool'
 
 const COMPONENTS: Record<Tool, (p: { docked: boolean }) => React.ReactNode> = {
   explorer: ExplorerTool,
@@ -23,7 +24,8 @@ const COMPONENTS: Record<Tool, (p: { docked: boolean }) => React.ReactNode> = {
   flow: FlowTool,
   skills: SkillsTool,
   plugins: PluginsTool,
-  activity: ActivityTool
+  activity: ActivityTool,
+  globals: GlobalsTool
 }
 
 /** A tool with its header, either full-size in the main area or docked on the right. */

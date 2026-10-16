@@ -5,7 +5,7 @@ import { TOOL_META } from './Rail'
 import { t } from '../i18n'
 
 const GROUPS: { title: string; tools: Tool[] }[] = [
-  { title: 'Create and run', tools: ['flow', 'skills', 'plugins'] },
+  { title: 'Create and run', tools: ['globals', 'flow', 'skills', 'plugins'] },
   { title: 'Project context', tools: ['board', 'notes', 'memory', 'explorer', 'git'] },
   { title: 'Look around', tools: ['browser', 'activity'] }
 ]
