@@ -7,14 +7,15 @@ import { mkdirSync, readdirSync, rmSync } from 'node:fs'
 import type { Agent, Team, TeamRun, TeamTurn } from '../shared/types'
 import { buildBrief, WRITE_BACK_INSTRUCTION } from '../shared/memory'
 import { buildTeamPrompt, decideNext, findAgent, leadOf, parseTurnEnd } from '../shared/prompt'
+import { matchGuardrail } from '../shared/guardrails'
 import { getProject, getSettings, userDir } from './store'
-import { listMemory, readTeam, reindexMemory, writeTeam } from './project'
+import { applyMemoryWrites, listMemory, readTeam, writeTeam } from './project'
 import { getAdapter, setUsage } from './engines'
 import { ClaudeSession, type PermissionRequest } from './engines/claudeSession'
 import { runTurn, type TurnResult } from './runner'
 import { describe } from './chat'
 import { mcpConfigFor } from './plugins'
-import { emit } from './events'
+import { emit, notify } from './events'
 import { record, registerLive } from './activity'
 import { readJson, writeJson } from './fsutil'
 
@@ -35,6 +36,10 @@ interface RunState {
   costBase: number
   /** The user addressed an agent mid-run: it goes next, whatever the handoff said. */
   redirect?: string
+  /** A parallel wave in progress: who issued it, who still has to run, and the shared brief. */
+  wave?: { from: string; queue: string[]; members: string[]; note: string }
+  /** Engine session per agent (resumed on its next turn) and the index of its last turn in the thread. */
+  sessions: Map<string, { sessionId?: string; lastTurn: number }>
 }
 
 const runs = new Map<string, RunState>()
@@ -66,7 +71,7 @@ function loadAll(): void {
       for (const t of run.turns) if (t.status === 'running') t.status = 'stopped'
     }
     run.pending = []
-    runs.set(run.id, { run, hopBase: run.hops, turnBase: agentTurns(run), costBase: run.costUsd })
+    runs.set(run.id, { run, hopBase: run.hops, turnBase: agentTurns(run), costBase: run.costUsd, sessions: new Map() })
   }
 }
 
@@ -108,15 +113,25 @@ function finish(state: RunState, status: TeamRun['status']): void {
   state.turnAgentId = undefined
   save(state.run)
   push(state.run, true)
+  if (status !== 'running') notify(`Agent thread ${status === 'done' ? 'finished' : status}`, state.run.goal.split('\n')[0])
   if (status !== 'running' && status !== 'waiting') {
     record({ source: 'team', kind: `run-${status}`, outcome: status === 'done' ? 'ok' : status === 'error' ? 'error' : status === 'stopped' ? 'stopped' : 'info', projectId: state.run.projectId, costUsd: state.run.costUsd })
   }
 }
 
-function startAgentTurn(state: RunState, team: Team, agent: Agent, cwd: string, prompt: string, onText: (t: string, delta?: boolean) => void, onTool: (n: string) => void): AgentTurn {
+function startAgentTurn(
+  state: RunState,
+  team: Team,
+  agent: Agent,
+  cwd: string,
+  prompt: string,
+  resumeId: string | undefined,
+  onText: (t: string, delta?: boolean) => void,
+  onTool: (n: string) => void
+): AgentTurn {
   const adapter = getAdapter(agent.engine)
   if (agent.engine !== 'claude') {
-    return runTurn(adapter, cwd, { prompt, model: agent.model, effort: agent.effort, approval: agent.permission }, (e) => {
+    return runTurn(adapter, cwd, { prompt, model: agent.model, effort: agent.effort, approval: agent.permission, resumeId: adapter.resumes ? resumeId : undefined }, (e) => {
       if (e.type === 'text') onText(e.text, e.delta)
       else if (e.type === 'tool') onTool(e.name)
     })
@@ -126,9 +141,11 @@ function startAgentTurn(state: RunState, team: Team, agent: Agent, cwd: string, 
   let resolve!: (r: TurnResult) => void
   const done = new Promise<TurnResult>((r) => (resolve = r))
   let settled = false
+  let sessionId: string | undefined
   const settle = (r: TurnResult) => {
     if (settled) return
     settled = true
+    r.sessionId ??= sessionId
     for (const [id, x] of requests) if (x.cs === cs) requests.delete(id)
     run.pending = run.pending.filter((p) => requests.has(p.id))
     resolve(r)
@@ -139,16 +156,20 @@ function startAgentTurn(state: RunState, team: Team, agent: Agent, cwd: string, 
     approval: agent.permission,
     model: agent.model,
     effort: agent.effort,
+    resumeId,
     mcpConfig: mcpConfigFor(run.projectId),
+    guarded: getSettings().guardrails,
     onTurnStart: () => {},
-    onText: (t) => onText(t),
+    onText: (t, delta) => onText(t, delta),
     onTool: (n) => onTool(n),
-    onSession: () => {},
+    onSession: (sid) => (sessionId = sid),
     onRateLimit: (info) => setUsage('claude', info),
     onPermission: (req) => {
-      if (team.routing.autoApprove && agent.permission !== 'read-only') return cs.respond(req.id, req, true)
+      const rule = getSettings().guardrails ? matchGuardrail(req.toolName, req.input) : null
+      if (!rule && agent.permission !== 'read-only' && (team.routing.autoApprove || agent.permission === 'full')) return cs.respond(req.id, req, true)
       requests.set(req.id, { runId: run.id, req, cs })
-      run.pending.push({ id: req.id, tool: req.tool, detail: describe(req), ts: Date.now(), agentId: agent.id })
+      run.pending.push({ id: req.id, tool: req.tool, detail: describe(req), ts: Date.now(), agentId: agent.id, ...(rule ? { guardrail: rule.title } : {}) })
+      notify(`${agent.name} needs approval`, `${req.tool} ${describe(req)}`)
       push(run, true)
     },
     onTurnEnd: (r) => settle({ text: r.text, tools: r.tools, files: r.files, costUsd: r.costUsd, error: r.error, stopped: r.interrupted, durationMs: r.durationMs }),
@@ -208,8 +229,21 @@ async function runNext(state: RunState): Promise<void> {
     const brief = buildBrief(listMemory(run.projectId))
     if (brief) system.push(brief)
   }
-  if (settings.memoryWriteBack && agent.permission !== 'read-only') system.push(WRITE_BACK_INSTRUCTION)
-  const body = buildTeamPrompt({ team, agent, goal: run.goal, turns: run.turns.slice(0, -1), note, from })
+  if (settings.memoryWriteBack) system.push(WRITE_BACK_INSTRUCTION) // a reply line, so read-only agents can write memory too
+  const prior = state.sessions.get(agent.id)
+  const adapterResumes = agent.engine === 'claude' || !!adapter.resumes
+  const resumeId = adapterResumes ? prior?.sessionId : undefined
+  const waveMembers = state.wave && state.wave.members.includes(agent.id) ? state.wave.members.filter((m) => m !== agent.id) : undefined
+  const body = buildTeamPrompt({
+    team,
+    agent,
+    goal: run.goal,
+    turns: run.turns.slice(0, -1),
+    note,
+    from,
+    since: resumeId ? prior!.lastTurn : undefined,
+    wave: waveMembers?.map((id) => team.agents.find((a) => a.id === id)?.name ?? id)
+  })
   const prompt = system.length ? `${system.join('\n\n')}\n\n---\n\n${body}` : body
 
   const before = await gitStatus(cwd)
@@ -224,6 +258,7 @@ async function runNext(state: RunState): Promise<void> {
     agent,
     cwd,
     prompt,
+    resumeId,
     (t, delta) => {
       turn.text += delta || !turn.text ? t : `\n\n${t}`
       push(run)
@@ -243,18 +278,13 @@ async function runNext(state: RunState): Promise<void> {
 
   turn.text = r.text || turn.text
   turn.costUsd = r.costUsd
+  state.sessions.set(agent.id, { sessionId: r.sessionId ?? resumeId, lastTurn: run.turns.indexOf(turn) })
   turn.endedAt = Date.now()
   const changed = new Set(r.files)
   if (before && after) for (const line of after) if (!before.has(line)) changed.add(line.slice(3).replace(/^"|"$/g, ''))
   turn.filesTouched = [...changed].slice(0, 200)
   run.costUsd += r.costUsd ?? 0
-  if (settings.memoryWriteBack) {
-    try {
-      reindexMemory(run.projectId)
-    } catch {
-      // best-effort
-    }
-  }
+  if (settings.memoryWriteBack && !r.error && !r.stopped) applyMemoryWrites(run.projectId, turn.text).catch(() => {})
   record({ source: 'team', kind: 'turn', outcome: r.stopped ? 'stopped' : r.error ? 'error' : 'ok', projectId: run.projectId, engine: agent.engine, durationMs: r.durationMs, costUsd: r.costUsd })
 
   if (r.stopped || stopped()) {
@@ -269,8 +299,23 @@ async function runNext(state: RunState): Promise<void> {
   }
   turn.status = 'done'
   const end = parseTurnEnd(turn.text, team.agents.map((a) => a.name))
-  if (end.handoff) turn.handoff = end.handoff
+  if (end.handoff) turn.handoff = { to: end.handoff.to.map((id) => findAgent(team, id)?.name ?? id).join(', '), note: end.handoff.note }
   if (end.done !== undefined) turn.done = end.done
+  run.question = undefined
+
+  // Inside a parallel wave every branch just reports; when the last one is done the issuer gets the results.
+  if (state.wave?.members.includes(agent.id)) {
+    const wave = state.wave
+    const nextId = wave.queue.shift()
+    run.hops++
+    if (nextId) run.next = { agentId: nextId, note: wave.note }
+    else {
+      state.wave = undefined
+      run.next = { agentId: wave.from, note: `Parallel results from ${wave.members.map((id) => team.agents.find((a) => a.id === id)?.name ?? id).join(', ')} are in the thread.` }
+    }
+    save(run)
+    return runNext(state)
+  }
 
   // The user addressed someone mid-turn: they go next and read the message from the transcript.
   if (state.redirect) {
@@ -283,12 +328,20 @@ async function runNext(state: RunState): Promise<void> {
   }
   const next = decideNext(team, agent, end)
   if (next.kind === 'done') return finish(state, 'done')
+  if (next.kind === 'ask') {
+    // The asking agent gets the user's answer: the next message in the thread resumes it.
+    run.question = next.question
+    run.next = { agentId: agent.id, note: 'The user answered your question; read their latest message.' }
+    return finish(state, 'waiting')
+  }
   run.hops++
   if (next.kind === 'wait') {
     run.next = { agentId: lead.id, note: next.reason }
     return finish(state, 'waiting')
   }
-  run.next = { agentId: next.agentId, note: next.note }
+  // Waves run their branches one after another here; results return to the issuer together.
+  if (next.agentIds.length > 1) state.wave = { from: agent.id, queue: next.agentIds.slice(1), members: next.agentIds, note: next.note }
+  run.next = { agentId: next.agentIds[0], note: next.note }
   if (!routing.autoRelay) return finish(state, 'waiting')
   save(run)
   return runNext(state)
@@ -368,7 +421,7 @@ export const teamApi = {
       createdAt: Date.now(),
       updatedAt: Date.now()
     }
-    const state: RunState = { run, hopBase: 0, turnBase: 0, costBase: 0 }
+    const state: RunState = { run, hopBase: 0, turnBase: 0, costBase: 0, sessions: new Map() }
     runs.set(run.id, state)
     save(run)
     restart(state, target.id, '')
@@ -390,7 +443,9 @@ export const teamApi = {
       return
     }
     save(state.run)
-    restart(state, (target ?? leadOf(team)).id, 'The user wrote to you in the thread; read their latest message.')
+    const asked = state.run.question ? state.run.next?.agentId : undefined
+    state.run.question = undefined
+    restart(state, (target ?? team.agents.find((a) => a.id === asked) ?? leadOf(team)).id, 'The user wrote to you in the thread; read their latest message.')
   },
   async continue(runId: string, agentId?: string): Promise<void> {
     const state = getState(runId)

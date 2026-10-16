@@ -29,6 +29,7 @@ export const DEFAULT_SETTINGS: Settings = {
   approval: 'ask',
   memoryInject: true,
   memoryWriteBack: false,
+  guardrails: true,
   hiddenEngines: [],
   openProjects: []
 }
@@ -47,7 +48,7 @@ export function sanitizeSettings(patch: unknown, base: Settings = DEFAULT_SETTIN
   if ('language' in p) out.language = oneOf(p.language, ['en', 'tr'] as const, base.language)
   if ('defaultEngine' in p) out.defaultEngine = oneOf(p.defaultEngine, ENGINE_IDS, base.defaultEngine)
   if ('approval' in p) out.approval = approvalOf(p.approval, base.approval)
-  for (const k of ['memoryInject', 'memoryWriteBack'] as const) {
+  for (const k of ['memoryInject', 'memoryWriteBack', 'guardrails'] as const) {
     if (typeof p[k] === 'boolean') out[k] = p[k] as boolean
   }
   if (Array.isArray(p.hiddenEngines)) out.hiddenEngines = p.hiddenEngines.filter((e) => ENGINE_IDS.includes(e as EngineId)) as EngineId[]
@@ -58,10 +59,11 @@ export function sanitizeSettings(patch: unknown, base: Settings = DEFAULT_SETTIN
 export const DEFAULT_BOARD: Kanban = {
   version: 1,
   columns: [
-    { id: 'backlog', title: 'Backlog', cards: [] },
-    { id: 'doing', title: 'In progress', cards: [] },
-    { id: 'review', title: 'Review', cards: [] },
-    { id: 'done', title: 'Done', cards: [] }
+    { id: 'backlog', title: 'Backlog', color: '#94a3b8', cards: [] },
+    { id: 'todo', title: 'To do', color: '#38bdf8', cards: [] },
+    { id: 'in-progress', title: 'In progress', color: '#fbbf24', cards: [] },
+    { id: 'review', title: 'Review', color: '#a78bfa', cards: [] },
+    { id: 'done', title: 'Done', color: '#34d399', cards: [] }
   ]
 }
 
@@ -70,6 +72,7 @@ export function sanitizeBoard(raw: unknown): Kanban {
   const columns = raw.columns.filter(isObj).slice(0, 20).map((c, ci) => ({
     id: id(c.id, ci),
     title: str(c.title, 80) || 'Untitled',
+    ...(/^#[0-9a-fA-F]{6}$/.test(str(c.color)) ? { color: str(c.color) } : {}),
     cards: (Array.isArray(c.cards) ? c.cards : []).filter(isObj).slice(0, 500).map(
       (k, ki): KanbanCard => ({
         id: id(k.id, ki),
@@ -124,7 +127,7 @@ export const DEFAULT_TEAM: Team = {
       engine: 'claude',
       permission: 'read-only',
       lead: true,
-      handoffs: [],
+      handoffs: ['analyst', 'dev', 'qa', 'designer'],
       instructions: 'You coordinate the team. Answer small read-only questions yourself; otherwise split the goal into steps and hand each to the most capable teammate with a concrete brief. Never bounce the request back to the user: assume the obvious interpretation and say so. Declare the goal done only after QA has signed off.'
     },
     {
@@ -136,11 +139,11 @@ export const DEFAULT_TEAM: Team = {
       color: '#60a5fa',
       engine: 'claude',
       permission: 'read-only',
-      handoffs: [],
+      handoffs: ['lead', 'dev'],
       instructions: 'Map the code the goal touches: files, dependencies, hidden coupling. Turn the goal into acceptance criteria. Report findings; never edit.'
     },
     {
-      id: 'developer',
+      id: 'dev',
       name: 'Developer',
       role: 'implementation',
       description: 'Implements the brief with tests first and the smallest change that works.',
@@ -148,7 +151,7 @@ export const DEFAULT_TEAM: Team = {
       color: '#fbbf24',
       engine: 'claude',
       permission: 'edits',
-      handoffs: [],
+      handoffs: ['lead', 'qa'],
       instructions: 'Implement the assigned track with tests first. Keep the change minimal, run the tests, and list the files you touched before handing off to QA.'
     },
     {
@@ -160,7 +163,7 @@ export const DEFAULT_TEAM: Team = {
       color: '#a78bfa',
       engine: 'claude',
       permission: 'edits',
-      handoffs: [],
+      handoffs: ['lead', 'dev'],
       instructions: 'Review the change against the acceptance criteria and run the tests. Block with concrete reasons and hand back to the Developer, or sign off to the Lead.'
     },
     {
@@ -172,7 +175,7 @@ export const DEFAULT_TEAM: Team = {
       color: '#f472b6',
       engine: 'claude',
       permission: 'read-only',
-      handoffs: [],
+      handoffs: ['lead', 'dev'],
       instructions: 'Check the user-facing surface: empty, loading and error states, copy, layout and accessibility. Suggest concrete fixes; never edit.'
     }
   ],

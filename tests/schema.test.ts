@@ -15,7 +15,7 @@ describe('sanitizeSettings', () => {
 
 describe('sanitizeBoard / sanitizeNotes', () => {
   it('defaults a missing board and drops junk cards', () => {
-    expect(sanitizeBoard(null).columns.map((c) => c.id)).toEqual(['backlog', 'doing', 'review', 'done'])
+    expect(sanitizeBoard(null).columns.map((c) => c.id)).toEqual(['backlog', 'todo', 'in-progress', 'review', 'done'])
     const b = sanitizeBoard({ columns: [{ id: 'c', title: 'C', cards: [{ id: 'k', title: 'T', labels: ['x', 3, ''] }, 'junk'] }] })
     expect(b.columns[0].cards).toHaveLength(1)
     expect(b.columns[0].cards[0].labels).toEqual(['x'])

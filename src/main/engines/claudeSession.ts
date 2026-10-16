@@ -10,6 +10,8 @@ import { killTree } from '../runner'
 export interface PermissionRequest {
   id: string
   tool: string
+  /** Claude's internal tool name (e.g. Bash), for guardrail matching. */
+  toolName: string
   /** Short human description from Claude (e.g. a file name or command). */
   description: string
   input: Record<string, unknown>
@@ -34,8 +36,13 @@ export interface ClaudeSessionOpts {
   resumeId?: string
   /** JSON for --mcp-config (plugin MCP servers). */
   mcpConfig?: string
+  /**
+   * Full access with guardrails: run in manual mode and let the app allow every request except the ones a
+   * guardrail rule matches. Without guardrails, Full access is Claude's own bypass mode.
+   */
+  guarded?: boolean
   onTurnStart(): void
-  onText(text: string): void
+  onText(text: string, delta?: boolean): void
   onTool(name: string, file?: string): void
   onSession(id: string): void
   onPermission(req: PermissionRequest): void
@@ -47,8 +54,23 @@ export interface ClaudeSessionOpts {
 const MODE: Record<ApprovalMode, string> = { 'read-only': 'dontAsk', ask: 'manual', edits: 'acceptEdits', full: 'bypassPermissions' }
 const EDIT_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']
 
-export function claudeArgs(o: Pick<ClaudeSessionOpts, 'approval' | 'model' | 'effort' | 'resumeId' | 'mcpConfig'>): string[] {
-  const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--permission-prompt-tool', 'stdio', '--permission-mode', MODE[o.approval]]
+export function claudeArgs(o: Pick<ClaudeSessionOpts, 'approval' | 'model' | 'effort' | 'resumeId' | 'mcpConfig' | 'guarded'>): string[] {
+  const mode = o.approval === 'full' && o.guarded ? 'manual' : MODE[o.approval]
+  // Same transport as vi3ecode: partial messages stream tokens; replayed user messages acknowledge steering.
+  const args = [
+    '-p',
+    '--input-format',
+    'stream-json',
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    '--include-partial-messages',
+    '--replay-user-messages',
+    '--permission-prompt-tool',
+    'stdio',
+    '--permission-mode',
+    mode
+  ]
   if (o.approval === 'read-only') args.push('--disallowedTools', ...EDIT_TOOLS)
   if (o.resumeId) args.push('--resume', o.resumeId)
   if (o.model) args.push('--model', o.model)
@@ -64,6 +86,9 @@ export class ClaudeSession {
   private reqSeq = 0
   private turn: { texts: string[]; tools: string[]; files: Set<string>; started: number; interrupted: boolean } | null = null
   private closed = false
+  /** Assistant message ids whose text already arrived as deltas (the full message repeats it). */
+  private streamed = new Set<string>()
+  private curMsg = ''
 
   constructor(private o: ClaudeSessionOpts) {
     this.child = spawn('claude', claudeArgs(o), {
@@ -120,7 +145,8 @@ export class ClaudeSession {
   }
 
   setApproval(approval: ApprovalMode): void {
-    this.write({ type: 'control_request', request_id: this.nextId(), request: { subtype: 'set_permission_mode', mode: MODE[approval] } })
+    const mode = approval === 'full' && this.o.guarded ? 'manual' : MODE[approval]
+    this.write({ type: 'control_request', request_id: this.nextId(), request: { subtype: 'set_permission_mode', mode } })
   }
 
   interrupt(): void {
@@ -188,12 +214,31 @@ export class ClaudeSession {
       case 'system':
         if (e.subtype === 'init' && typeof e.session_id === 'string') this.o.onSession(e.session_id)
         return
+      case 'stream_event': {
+        const ev = (e.event ?? {}) as Record<string, unknown>
+        if (ev.type === 'message_start') this.curMsg = String((ev.message as { id?: string } | undefined)?.id ?? '')
+        else if (ev.type === 'content_block_start' && (ev.content_block as { type?: string } | undefined)?.type === 'text') {
+          if (!this.turn) this.beginTurn()
+          this.streamed.add(this.curMsg)
+          this.turn!.texts.push('')
+          this.o.onText('', false) // paragraph break before a new text block
+        } else if (ev.type === 'content_block_delta') {
+          const d = (ev.delta ?? {}) as { type?: string; text?: string }
+          if (d.type === 'text_delta' && d.text && this.turn) {
+            this.turn.texts[this.turn.texts.length - 1] += d.text
+            this.o.onText(d.text, true)
+          }
+        }
+        return
+      }
       case 'assistant': {
         // A steer that landed after the previous result starts a new turn on its own.
         if (!this.turn) this.beginTurn()
+        const msgId = String((e.message as { id?: string } | undefined)?.id ?? '')
         const content = ((e.message as { content?: unknown[] } | undefined)?.content ?? []) as Record<string, unknown>[]
         for (const c of content) {
           if (c.type === 'text' && typeof c.text === 'string') {
+            if (this.streamed.has(msgId)) continue
             this.turn!.texts.push(c.text)
             this.o.onText(c.text)
           } else if (c.type === 'tool_use') {
@@ -224,6 +269,7 @@ export class ClaudeSession {
           this.o.onPermission({
             id,
             tool: String(req.display_name ?? req.tool_name ?? 'tool'),
+            toolName: String(req.tool_name ?? req.display_name ?? 'tool'),
             description: String(req.description ?? ''),
             input: (req.input ?? {}) as Record<string, unknown>,
             suggestions: Array.isArray(req.permission_suggestions) ? req.permission_suggestions : []

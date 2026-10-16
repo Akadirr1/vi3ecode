@@ -8,13 +8,14 @@ import type { ApprovalMode, ChatMessage, ChatSession, ChatSummary, EngineId } fr
 import { approvalOf, ENGINE_IDS } from '../shared/schema'
 import { buildBrief, WRITE_BACK_INSTRUCTION } from '../shared/memory'
 import { withHistory } from '../shared/prompt'
+import { matchGuardrail } from '../shared/guardrails'
 import { getProject, getSettings, userDir } from './store'
 import { getAdapter, setUsage } from './engines'
 import { ClaudeSession, type PermissionRequest } from './engines/claudeSession'
 import { runTurn, type TurnHandle } from './runner'
-import { listMemory, reindexMemory } from './project'
+import { applyMemoryWrites, listMemory } from './project'
 import { mcpConfigFor } from './plugins'
-import { emit } from './events'
+import { emit, notify } from './events'
 import { record, registerLive } from './activity'
 import { readJson, writeJson } from './fsutil'
 
@@ -117,12 +118,8 @@ function endTurn(s: ChatSession, r: { text: string; files: string[]; costUsd?: n
   msg.costUsd = r.costUsd
   msg.durationMs = r.durationMs
   msg.files = [...new Set([...(msg.files ?? []), ...r.files])]
-  if (getSettings().memoryWriteBack) {
-    try {
-      reindexMemory(s.projectId)
-    } catch {
-      // index regeneration is best-effort
-    }
+  if (getSettings().memoryWriteBack && msg.status === 'done') {
+    applyMemoryWrites(s.projectId, msg.text).catch(() => {}) // best-effort; the reply stays as written
   }
   record({ source: 'chat', kind: 'turn', outcome: msg.status === 'done' ? 'ok' : msg.status === 'stopped' ? 'stopped' : 'error', projectId: s.projectId, engine: s.engine, durationMs: r.durationMs, costUsd: r.costUsd })
   save(s)
@@ -141,13 +138,14 @@ function claudeFor(s: ChatSession): ClaudeSession {
     effort: s.effort,
     resumeId: s.engineSessionId,
     mcpConfig: mcpConfigFor(s.projectId),
+    guarded: getSettings().guardrails,
     onTurnStart: () => {
       if (!active.has(s.id)) newAssistant(s)
       push(s, true)
     },
-    onText: (text) => {
+    onText: (text, delta) => {
       const msg = active.get(s.id) ?? newAssistant(s)
-      msg.text += msg.text ? `\n\n${text}` : text
+      msg.text += delta || !msg.text ? text : `\n\n${text}`
       push(s)
     },
     onTool: (name, f) => {
@@ -159,9 +157,11 @@ function claudeFor(s: ChatSession): ClaudeSession {
     onSession: (sid) => (s.engineSessionId = sid),
     onRateLimit: (info) => setUsage('claude', info),
     onPermission: (req) => {
-      if (s.autoApprove && s.approval !== 'read-only') return cs.respond(req.id, req, true)
+      const rule = getSettings().guardrails ? matchGuardrail(req.toolName, req.input) : null
+      if (!rule && s.approval !== 'read-only' && (s.autoApprove || s.approval === 'full')) return cs.respond(req.id, req, true)
       requests.set(req.id, { sessionId: s.id, req })
-      s.pending.push({ id: req.id, tool: req.tool, detail: describe(req), ts: Date.now() })
+      s.pending.push({ id: req.id, tool: req.tool, detail: describe(req), ts: Date.now(), ...(rule ? { guardrail: rule.title } : {}) })
+      notify(`${s.title}: approval needed`, `${req.tool} ${describe(req)}`)
       push(s, true)
     },
     onTurnEnd: (r) => {
@@ -305,7 +305,7 @@ export const chatApi = {
     }
     if (typeof patch.autoApprove === 'boolean') {
       s.autoApprove = patch.autoApprove
-      if (s.autoApprove && s.approval !== 'read-only') for (const p of [...s.pending]) await chatApi.respond(id, p.id, true)
+      if (s.autoApprove && s.approval !== 'read-only') for (const p of s.pending.filter((x) => !x.guardrail)) await chatApi.respond(id, p.id, true)
     }
     save(s)
     push(s, true)

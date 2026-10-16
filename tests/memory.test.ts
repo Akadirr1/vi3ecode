@@ -51,3 +51,21 @@ describe('index and brief', () => {
     expect(buildBrief([])).toBe('')
   })
 })
+
+import { parseMemoryWrites } from '../src/shared/memory'
+
+describe('MEMORY_WRITE lines', () => {
+  it('parses valid lines and skips malformed ones', () => {
+    const text = [
+      'Done with the refactor.',
+      'MEMORY_WRITE {"title":"Session cookie","content":"Keep sid one release.","type":"decision","tags":["auth"]}',
+      'MEMORY_WRITE {not json}',
+      '`MEMORY_WRITE {"title":"Flaky test","content":"retry e2e once","type":"lesson_learned"}`',
+      'MEMORY_WRITE {"title":"","content":"x"}'
+    ].join('\n')
+    expect(parseMemoryWrites(text)).toEqual([
+      { title: 'Session cookie', content: 'Keep sid one release.', type: 'decision', tags: ['auth'] },
+      { title: 'Flaky test', content: 'retry e2e once', type: 'lesson', tags: [] }
+    ])
+  })
+})

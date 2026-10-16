@@ -50,6 +50,8 @@ export interface Settings {
   approval: ApprovalMode
   memoryInject: boolean
   memoryWriteBack: boolean
+  /** Destructive operations always ask, even under Full access or AUTO-APPROVE. */
+  guardrails: boolean
   hiddenEngines: EngineId[]
   /** Project ids open as tabs, in tab order. */
   openProjects: string[]
@@ -185,6 +187,8 @@ export interface TeamRun {
   next?: { agentId: string; note: string }
   /** Approval requests waiting for the user, tagged with the asking agent. */
   pending: (PendingApproval & { agentId: string })[]
+  /** Set while waiting on an agent's @ask-user question; the user's next message answers it. */
+  question?: string
   createdAt: number
   updatedAt: number
 }
@@ -204,6 +208,8 @@ export interface KanbanCard {
 export interface KanbanColumn {
   id: string
   title: string
+  /** Dot colour (#rrggbb). */
+  color?: string
   cards: KanbanCard[]
 }
 
@@ -305,6 +311,8 @@ export interface PtyInfo {
 export interface PendingApproval {
   id: string
   tool: string
+  /** Set when a guardrail rule raised this card. */
+  guardrail?: string
   /** One line: the file, command or URL the tool wants to act on. */
   detail: string
   ts: number

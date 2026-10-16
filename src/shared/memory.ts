@@ -38,7 +38,8 @@ export function parseNote(slug: string, text: string): MemoryNote {
       if (kv) fm[kv[1].toLowerCase()] = kv[2].trim()
     }
   }
-  const type = (MEMORY_TYPES as readonly string[]).includes(fm.type) ? (fm.type as MemoryType) : 'fact'
+  const t = fm.type === 'lesson_learned' ? 'lesson' : fm.type // vi3ecode's name for a lesson
+  const type = (MEMORY_TYPES as readonly string[]).includes(t) ? (t as MemoryType) : 'fact'
   const tags = (fm.tags ?? '')
     .replace(/^\[|\]$/g, '')
     .split(',')
@@ -63,7 +64,7 @@ export function serializeNote(n: Pick<MemoryNote, 'title' | 'type' | 'tags' | 'b
   return [
     '---',
     `title: ${title}`,
-    `type: ${n.type}`,
+    `type: ${n.type === 'lesson' ? 'lesson_learned' : n.type}`, // vi3ecode's spelling, read back as lesson
     `tags: [${tags.join(', ')}]`,
     `created: ${n.created}`,
     `updated: ${n.updated}`,
@@ -137,13 +138,37 @@ export function buildBrief(notes: MemoryNote[], maxChars = 6000): string {
   return out + tail
 }
 
-/** Instruction appended when agents may write memory themselves. */
-export const WRITE_BACK_INSTRUCTION = `You may record durable project knowledge in the vault: create or update a file .vi3ecode/memory/<slug>.md (slug: lowercase letters, digits, dashes) with this exact frontmatter:
----
-title: <short title>
-type: <one of: ${MEMORY_TYPES.join(', ')}>
-tags: [tag1, tag2]
-created: <YYYY-MM-DD>
-updated: <YYYY-MM-DD>
----
-followed by the note body. Link related notes as [[slug]]. Do not edit MEMORY.md; it is regenerated. Only write notes worth keeping across sessions.`
+/** Instruction appended when agents may write memory themselves (same line protocol as vi3ecode). */
+export const WRITE_BACK_INSTRUCTION = `Project memory write-back is on. When you learn something durable about this project (a decision, a pattern, a warning, a lesson…), record it by adding a line of this exact form to your reply, one line per note:
+MEMORY_WRITE {"title": "<short title>", "content": "<the note, may reference [[other-note-slug]]>", "type": "<one of: ${MEMORY_TYPES.join(', ')}>", "tags": ["tag"]}
+Only record what is worth keeping across sessions. The app stores each line in .vi3ecode/memory/entries/.`
+
+export interface MemoryWrite {
+  title: string
+  content: string
+  type: MemoryType
+  tags: string[]
+}
+
+/** `MEMORY_WRITE {json}` lines anywhere in a reply; malformed lines are skipped. */
+export function parseMemoryWrites(text: string): MemoryWrite[] {
+  const out: MemoryWrite[] = []
+  for (const m of text.matchAll(/^[\s>*`]*MEMORY_WRITE\s+(\{.*\})[\s`]*$/gm)) {
+    try {
+      const j = JSON.parse(m[1]) as Record<string, unknown>
+      const title = String(j.title ?? '').trim().slice(0, 200)
+      const content = String(j.content ?? '').trim()
+      if (!title || !content) continue
+      const t = j.type === 'lesson_learned' ? 'lesson' : String(j.type)
+      out.push({
+        title,
+        content: content.slice(0, 20_000),
+        type: (MEMORY_TYPES as readonly string[]).includes(t) ? (t as MemoryType) : 'fact',
+        tags: Array.isArray(j.tags) ? j.tags.map((x) => String(x).slice(0, 40)).filter(Boolean).slice(0, 12) : []
+      })
+    } catch {
+      // not JSON: ignore the line
+    }
+  }
+  return out.slice(0, 20)
+}

@@ -8,70 +8,81 @@ const names = team.agents.map((a) => a.name)
 const agent = (id: string) => team.agents.find((a) => a.id === id)!
 
 describe('parseTurnEnd', () => {
-  it('reads a handoff with an em dash note', () => {
-    expect(parseTurnEnd('Mapped the deps.\n\nHANDOFF: Developer — implement token refresh', names)).toEqual({
-      handoff: { to: 'Developer', note: 'implement token refresh' }
-    })
+  it('reads @handoff with one or more ids, copies and decoration', () => {
+    expect(parseTurnEnd('Mapped the deps.\n\n@handoff dev: implement token refresh', names)).toEqual({ handoff: { to: ['dev'], note: 'implement token refresh' } })
+    expect(parseTurnEnd('**@handoff qa, designer, dev~2: check it**', names).handoff).toEqual({ to: ['qa', 'designer', 'dev'], note: 'check it' })
   })
-  it('tolerates markdown decoration, case and "to"', () => {
-    expect(parseTurnEnd('**handoff:** to @qa: review the patch', names).handoff).toEqual({ to: 'QA', note: 'review the patch' })
+  it('reads @done and @ask-user (text or questions JSON)', () => {
+    expect(parseTurnEnd('All good.\n@done: shipped session refresh', names)).toEqual({ done: 'shipped session refresh' })
+    expect(parseTurnEnd('@ask-user: Which branch?', names)).toEqual({ ask: 'Which branch?' })
+    const json = '@ask-user: {"questions":[{"question":"Which plan?","header":"Plan","options":[{"label":"Monthly"},{"label":"Yearly"}],"multiSelect":false}]}'
+    expect(parseTurnEnd(json, names)).toEqual({ ask: 'Which plan? (Monthly / Yearly)' })
   })
-  it('matches multi-word names before shorter prefixes', () => {
-    expect(parseTurnEnd('HANDOFF: QA Lead - sign off', ['QA', 'QA Lead']).handoff).toEqual({ to: 'QA Lead', note: 'sign off' })
+  it('still understands legacy HANDOFF/DONE lines', () => {
+    expect(parseTurnEnd('HANDOFF: Developer — implement it', names)).toEqual({ handoff: { to: ['Developer'], note: 'implement it' } })
+    expect(parseTurnEnd('**handoff:** to @qa: review the patch', names).handoff).toEqual({ to: ['QA'], note: 'review the patch' })
+    expect(parseTurnEnd('HANDOFF: QA Lead - sign off', ['QA', 'QA Lead']).handoff).toEqual({ to: ['QA Lead'], note: 'sign off' })
   })
-  it('does not match a name that is only a prefix of a word', () => {
-    expect(parseTurnEnd('HANDOFF: QAX - x', ['QA']).handoff?.to).toBe('QAX')
-  })
-  it('takes the last marker and reads DONE', () => {
-    expect(parseTurnEnd('HANDOFF: QA - check\nQA approved.\nDONE: shipped session refresh', names)).toEqual({ done: 'shipped session refresh' })
-  })
-  it('returns nothing without a marker', () => {
+  it('takes the last protocol line and returns nothing without one', () => {
+    expect(parseTurnEnd('@handoff qa: check\nQA approved.\n@done: ok', names)).toEqual({ done: 'ok' })
     expect(parseTurnEnd('just some text', names)).toEqual({})
   })
 })
 
 describe('decideNext', () => {
-  it('routes a handoff to the named teammate', () => {
-    expect(decideNext(team, agent('lead'), { handoff: { to: 'Analyst', note: 'map it' } })).toEqual({ kind: 'handoff', agentId: 'analyst', note: 'map it' })
+  it('routes a handoff by id or name, and starts waves', () => {
+    expect(decideNext(team, agent('lead'), { handoff: { to: ['analyst'], note: 'map it' } })).toEqual({ kind: 'handoff', agentIds: ['analyst'], note: 'map it' })
+    expect(decideNext(team, agent('lead'), { handoff: { to: ['QA', 'designer'], note: 'look' } })).toEqual({ kind: 'handoff', agentIds: ['qa', 'designer'], note: 'look' })
   })
-  it('only the lead can finish', () => {
+  it('only the lead can finish; questions go to the user', () => {
     expect(decideNext(team, agent('lead'), { done: 'ok' })).toEqual({ kind: 'done', summary: 'ok' })
-    expect(decideNext(team, agent('qa'), { done: 'ok' })).toMatchObject({ kind: 'handoff', agentId: 'lead' })
+    expect(decideNext(team, agent('qa'), { done: 'ok' })).toMatchObject({ kind: 'handoff', agentIds: ['lead'] })
+    expect(decideNext(team, agent('dev'), { ask: 'Which db?' })).toEqual({ kind: 'ask', question: 'Which db?' })
   })
   it('honours allowed handoff targets and return-to-lead off', () => {
     const t = structuredClone(team)
-    const dev = t.agents.find((a) => a.id === 'developer')!
-    dev.handoffs = ['qa']
-    expect(decideNext(t, dev, { handoff: { to: 'Designer', note: 'x' } })).toMatchObject({ kind: 'handoff', agentId: 'lead' })
-    expect(decideNext(t, dev, { handoff: { to: 'QA', note: 'x' } })).toMatchObject({ kind: 'handoff', agentId: 'qa' })
+    const dev = t.agents.find((a) => a.id === 'dev')!
+    expect(decideNext(t, dev, { handoff: { to: ['designer'], note: 'x' } })).toMatchObject({ kind: 'handoff', agentIds: ['lead'] })
+    expect(decideNext(t, dev, { handoff: { to: ['qa'], note: 'x' } })).toMatchObject({ kind: 'handoff', agentIds: ['qa'] })
     t.routing.returnToLead = false
     expect(decideNext(t, dev, {})).toMatchObject({ kind: 'wait' })
-    expect(decideNext(t, agent('qa'), { done: 'ok' })).toMatchObject({ kind: 'done' })
+    expect(decideNext(t, t.agents.find((a) => a.id === 'qa')!, { done: 'ok' })).toMatchObject({ kind: 'done' })
   })
   it('sends unclear endings back to the lead, and makes a silent lead wait', () => {
-    expect(decideNext(team, agent('developer'), {})).toMatchObject({ kind: 'handoff', agentId: 'lead' })
-    expect(decideNext(team, agent('developer'), { handoff: { to: 'Nobody', note: '' } })).toMatchObject({ kind: 'handoff', agentId: 'lead' })
+    expect(decideNext(team, agent('dev'), {})).toMatchObject({ kind: 'handoff', agentIds: ['lead'] })
+    expect(decideNext(team, agent('dev'), { handoff: { to: ['Nobody'], note: '' } })).toMatchObject({ kind: 'handoff', agentIds: ['lead'] })
     expect(decideNext(team, agent('lead'), {})).toMatchObject({ kind: 'wait' })
-    expect(decideNext(team, agent('lead'), { handoff: { to: 'Lead', note: '' } })).toMatchObject({ kind: 'wait' })
+    expect(decideNext(team, agent('lead'), { handoff: { to: ['lead'], note: '' } })).toMatchObject({ kind: 'wait' })
   })
 })
 
+const turn = (over: Partial<TeamTurn>): TeamTurn => ({ id: 't', kind: 'agent', agentId: 'lead', agentName: 'Lead', engine: 'claude', text: '', tools: [], filesTouched: [], status: 'done', startedAt: 0, ...over })
+
 describe('buildTeamPrompt', () => {
-  it('includes roster, goal, permission, protocol and the handoff note', () => {
-    const turns: TeamTurn[] = [
-      { id: 't1', kind: 'agent', agentId: 'lead', agentName: 'Lead', engine: 'claude', text: 'x'.repeat(5000), tools: [], filesTouched: ['a.ts'], status: 'done', startedAt: 0 }
-    ]
-    const p = buildTeamPrompt({ team, agent: agent('developer'), goal: 'Add refresh', turns, note: 'do track A', from: 'Lead' })
-    expect(p).toContain('You are Developer')
-    expect(p).toContain('- QA (tests & review)')
-    expect(p).toContain('Add refresh')
-    expect(p).toContain('Lead handed off to you: do track A')
-    expect(p).toContain('HANDOFF: <teammate name>')
-    expect(p).toContain('hand off to Lead instead')
+  it('first turn: persona, team, permission, whole thread, task and protocol', () => {
+    const turns = [turn({ kind: 'user', agentName: 'You', text: 'Add refresh' }), turn({ text: 'x'.repeat(9000), filesTouched: ['a.ts'] })]
+    const p = buildTeamPrompt({ team, agent: agent('dev'), goal: 'Add refresh', turns, note: 'do track A', from: 'Lead' })
+    expect(p).toContain('You are Developer, the implementation agent')
+    expect(p).toContain('- qa — QA (tests & review)')
+    expect(p).toContain('THREAD SO FAR')
+    expect(p).toContain('[User] Add refresh')
     expect(p).toContain('[truncated]')
     expect(p).toContain('files touched: a.ts')
-    expect(p).toContain('Permission: edits')
-    expect(p).toContain('You may hand off to: Lead, Analyst, QA, Designer.')
+    expect(p).toContain('Lead handed off to you: do track A')
+    expect(p).toContain('you may hand off to: lead, qa')
+    expect(p).toContain('YOUR PERMISSION: edits')
+  })
+  it('resumed turn: only what is new since the agent spoke', () => {
+    const turns = [turn({ text: 'old' }), turn({ agentId: 'dev', agentName: 'Developer', text: 'mine' }), turn({ agentName: 'QA', text: 'new finding' })]
+    const p = buildTeamPrompt({ team, agent: agent('dev'), goal: 'g', turns, since: 1, note: 'fix it', from: 'QA' })
+    expect(p.startsWith('NEW IN THE THREAD SINCE YOUR LAST TURN')).toBe(true)
+    expect(p).toContain('[QA] new finding')
+    expect(p).not.toContain('old')
+  })
+  it('parallel branch turns may only finish with @done', () => {
+    const p = buildTeamPrompt({ team, agent: agent('qa'), goal: 'g', turns: [], note: 'check', wave: ['Designer'] })
+    expect(p).toContain('PARALLEL BRANCH: Designer')
+    expect(p).not.toContain('HANDOFF PROTOCOL')
   })
 })
 
