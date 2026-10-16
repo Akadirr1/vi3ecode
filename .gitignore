@@ -4,3 +4,6 @@ dist/
 release/
 *.log
 .DS_Store
+
+# Agent worktrees
+.claude/worktrees/
