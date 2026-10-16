@@ -73,7 +73,12 @@ export function assertInside(root: string, p: string): string {
   return p
 }
 
+/** Throws when the last read of this file failed (permissions, a lock), so nothing shows or saves a default in its place. */
+export function assertReadable(path: string): void {
+  if (unreadable.has(path)) throw new Error(`${path} could not be read, so it was left as it is. Check its permissions or close the program holding it, then try again.`)
+}
+
 export function writeJson(path: string, data: unknown): void {
-  if (unreadable.has(path)) throw new Error(`${path} could not be read, so it was not replaced. Check its permissions or close the program holding it, then try again.`)
+  assertReadable(path)
   writeFileAtomic(path, JSON.stringify(data, null, 2) + '\n')
 }

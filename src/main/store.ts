@@ -5,7 +5,7 @@ import { basename, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Project, Settings } from '../shared/types'
 import { DEFAULT_SETTINGS, sanitizeSettings } from '../shared/schema'
-import { readJson, writeJson } from './fsutil'
+import { assertReadable, readJson, writeJson } from './fsutil'
 
 interface State {
   projects: Project[]
@@ -44,6 +44,7 @@ export function addProject(path: string): Project {
   const abs = resolve(path)
   if (!existsSync(abs) || !statSync(abs).isDirectory()) throw new Error(`Not a folder: ${abs}`)
   const s = load()
+  assertReadable(stateFile()) // before changing memory, so a refused save leaves nothing half-applied
   const existing = s.projects.find((p) => p.path === abs)
   if (existing) return existing
   const project: Project = { id: randomUUID(), name: basename(abs) || abs, path: abs, addedAt: Date.now() }
@@ -65,6 +66,7 @@ export const projectsApi = {
   },
   async remove(id: string): Promise<void> {
     const s = load()
+    assertReadable(stateFile())
     s.projects = s.projects.filter((p) => p.id !== id)
     save()
   }
@@ -76,6 +78,7 @@ export const settingsApi = {
   },
   async set(patch: Partial<Settings>): Promise<Settings> {
     const s = load()
+    assertReadable(stateFile())
     s.settings = sanitizeSettings(patch, s.settings)
     save()
     return s.settings

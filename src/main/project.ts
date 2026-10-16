@@ -7,7 +7,7 @@ import { sanitizeBoard, sanitizeNotes, sanitizeTeam } from '../shared/schema'
 import { boardFromDisk, boardToDisk, notesFromDisk, notesToDisk, teamFromDisk, teamToDisk } from '../shared/formats'
 import { buildIndex, extractLinks, parseMemoryWrites, parseNote, serializeNote, slugify, SLUG_RE } from '../shared/memory'
 import { getProject } from './store'
-import { assertInside, readJson, writeFileAtomic, writeJson } from './fsutil'
+import { assertInside, assertReadable, readJson, writeFileAtomic, writeJson } from './fsutil'
 
 /** A path under <project>/.vi3ecode, refused when a committed symlink would lead outside the project. */
 export const dataDir = (projectId: string, ...parts: string[]) => {
@@ -17,7 +17,10 @@ export const dataDir = (projectId: string, ...parts: string[]) => {
 
 export const boardApi = {
   async get(projectId: string): Promise<Kanban> {
-    return boardFromDisk(readJson(dataDir(projectId, 'kanban.json'), null))
+    const file = dataDir(projectId, 'kanban.json')
+    const raw = readJson(file, null)
+    assertReadable(file)
+    return boardFromDisk(raw)
   },
   async save(projectId: string, board: Kanban): Promise<Kanban> {
     const clean = sanitizeBoard(board)
@@ -29,7 +32,10 @@ export const boardApi = {
 
 export const notesApi = {
   async get(projectId: string): Promise<Notes> {
-    return notesFromDisk(readJson(dataDir(projectId, 'notes.json'), null))
+    const file = dataDir(projectId, 'notes.json')
+    const raw = readJson(file, null)
+    assertReadable(file)
+    return notesFromDisk(raw)
   },
   async save(projectId: string, notes: Notes): Promise<Notes> {
     const clean = sanitizeNotes(notes)
@@ -41,8 +47,10 @@ export const notesApi = {
 
 /** The team lives in .vi3ecode/agents.json (vi3ecode's file); team.json is read once for older projects. */
 export function readTeam(projectId: string): Team {
-  const disk = readJson<unknown>(dataDir(projectId, 'agents.json'), null) ?? readJson<unknown>(dataDir(projectId, 'team.json'), null)
-  return teamFromDisk(disk)
+  const file = dataDir(projectId, 'agents.json')
+  const disk = readJson<unknown>(file, null)
+  assertReadable(file) // a locked team file must not run or show as the default team
+  return teamFromDisk(disk ?? readJson<unknown>(dataDir(projectId, 'team.json'), null))
 }
 
 export function writeTeam(projectId: string, team: Team): Team {

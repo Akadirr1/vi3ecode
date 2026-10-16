@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmdirSync, writeFile
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { readJson, writeJson } from '../src/main/fsutil'
+import { assertReadable, readJson, writeJson } from '../src/main/fsutil'
 import { sanitizeTeam } from '../src/shared/schema'
 
 describe('readJson', () => {
@@ -26,6 +26,7 @@ describe('readJson', () => {
     mkdirSync(file) // reading a directory fails with something other than "not found"
     expect(readJson(file, 'fb')).toBe('fb')
     expect(() => writeJson(file, { a: 1 })).toThrow(/could not be read/)
+    expect(() => assertReadable(file)).toThrow(/could not be read/)
     rmdirSync(file)
     writeFileSync(file, '{"a":0}')
     expect(readJson(file, null)).toEqual({ a: 0 }) // a successful read lifts the block
