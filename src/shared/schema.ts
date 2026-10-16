@@ -193,12 +193,13 @@ const copies = (v: unknown): number | undefined => {
 
 export function sanitizeTeam(raw: unknown): Team {
   if (!isObj(raw) || !Array.isArray(raw.agents)) return structuredClone(DEFAULT_TEAM)
-  const agents = raw.agents.filter(isObj).slice(0, 50).map(
+  // vi3ecode's own limits, so a save never cuts what the original wrote.
+  const agents = raw.agents.filter(isObj).slice(0, 64).map(
     (a, i): Agent => ({
       id: id(a.id, i),
-      name: str(a.name, 40).trim() || `Agent ${i + 1}`,
-      role: str(a.role, 60),
-      description: str(a.description, 300),
+      name: str(a.name, 60).trim() || `Agent ${i + 1}`,
+      role: str(a.role, 80),
+      description: str(a.description, 4000),
       avatar: str(a.avatar, 16) || `glyph:${i % 12}`,
       color: /^#[0-9a-fA-F]{6}$/.test(str(a.color)) ? str(a.color) : '#a4abb8',
       engine: oneOf(a.engine, ENGINE_IDS, 'claude'),

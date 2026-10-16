@@ -1,12 +1,42 @@
 import { randomBytes } from 'node:crypto'
-import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
+import { constants, copyFileSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 
+/** Files whose last read failed for a reason other than not existing; writeJson will not replace them. */
+const unreadable = new Set<string>()
+
+/**
+ * Missing file: the fallback. A file that exists but cannot be parsed is copied aside first (once per version),
+ * since the save that follows replaces it. One that cannot be read at all (permissions, a lock) is left alone and
+ * may not be overwritten until a later read succeeds.
+ */
 export function readJson<T>(path: string, fallback: T): T {
+  let text: string
   try {
-    return JSON.parse(readFileSync(path, 'utf8')) as T
-  } catch {
+    text = readFileSync(path, 'utf8')
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code
+    if (code !== 'ENOENT' && code !== 'ENOTDIR') unreadable.add(path)
     return fallback
+  }
+  unreadable.delete(path)
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    if (text.trim()) keepAside(path)
+    return fallback
+  }
+}
+
+
+function keepAside(path: string): void {
+  if (/\.unreadable-\d+$/.test(path)) return // never a copy of a copy
+  try {
+    const to = `${path}.unreadable-${Math.round(statSync(path).mtimeMs)}`
+    copyFileSync(path, to, constants.COPYFILE_EXCL) // this version is already kept when it exists
+    console.warn(`vi3ecode: could not parse ${path}; kept a copy as ${to}`)
+  } catch {
+    // already kept, or nothing more we can do; the caller still gets its fallback
   }
 }
 
@@ -44,5 +74,6 @@ export function assertInside(root: string, p: string): string {
 }
 
 export function writeJson(path: string, data: unknown): void {
+  if (unreadable.has(path)) throw new Error(`${path} could not be read, so it was not replaced. Check its permissions or close the program holding it, then try again.`)
   writeFileAtomic(path, JSON.stringify(data, null, 2) + '\n')
 }

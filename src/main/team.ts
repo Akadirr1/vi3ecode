@@ -73,6 +73,7 @@ function loadAll(): void {
     return
   }
   for (const n of names) {
+    if (!n.endsWith('.json')) continue
     const run = readJson<TeamRun | null>(userDir('team-runs', n), null)
     if (!run || !ID_RE.test(run.id) || !Array.isArray(run.turns)) continue
     for (const t of run.turns) t.kind ??= 'agent'

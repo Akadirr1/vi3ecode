@@ -12,7 +12,7 @@ import { APPROVAL_LABEL, formatCost } from '../../components/format'
 import { AvatarPicker, SWATCHES, Swatches } from './AvatarPicker'
 import { errorText, saveTeam, setTeam, useRuns, useTeam, workingAgents } from './store'
 
-const MAX_AGENTS = 12 // sanitizeTeam keeps at most 12
+const MAX_AGENTS = 12 // how many this dialog adds; a team file may hold up to 64 (sanitizeTeam)
 const MAX_COPIES = 8 // per role, as in vi3ecode
 const MAX_RUNNING = 64 // copies across the whole team, as in vi3ecode
 const PERMISSIONS: [ApprovalMode, string][] = [
@@ -219,9 +219,9 @@ function AgentDetail({ team, agent, working, lastBusy, run, update, onClose, onR
           <Avatar avatar={agent.avatar} color={agent.color} size={44} />
         </button>
         <div className="col grow td-ident">
-          <input className="td-name" value={agent.name} maxLength={40} aria-label={t('Name')} onChange={(e) => patch({ name: e.target.value })} />
+          <input className="td-name" value={agent.name} maxLength={60} aria-label={t('Name')} onChange={(e) => patch({ name: e.target.value })} />
           <div className="row td-sub">
-            <input className="td-role" style={{ color: agent.color }} value={agent.role} maxLength={60} placeholder={t('role')} aria-label={t('Role')} onChange={(e) => patch({ role: e.target.value })} />
+            <input className="td-role" style={{ color: agent.color }} value={agent.role} maxLength={80} placeholder={t('role')} aria-label={t('Role')} onChange={(e) => patch({ role: e.target.value })} />
             <span className="faint">·</span>
             <span className={`td-state${!agent.paused && working ? ' working' : ''}`}>{agent.paused ? t('paused') : working ? t('working') : t('idle')}</span>
           </div>
@@ -244,7 +244,7 @@ function AgentDetail({ team, agent, working, lastBusy, run, update, onClose, onR
             <AvatarPicker avatar={agent.avatar} color={agent.color} onChange={patch} />
           </div>
         ) : null}
-        <input className="td-desc" value={agent.description} maxLength={300} placeholder={t('One line on what this agent does')} aria-label={t('Description')} onChange={(e) => patch({ description: e.target.value })} />
+        <input className="td-desc" value={agent.description} maxLength={4000} placeholder={t('One line on what this agent does')} aria-label={t('Description')} onChange={(e) => patch({ description: e.target.value })} />
         <label className="field">
           <span className="micro">{t('Instructions')}</span>
           <textarea className="textarea td-instructions" value={agent.instructions} maxLength={50000} onChange={(e) => patch({ instructions: e.target.value })} />
@@ -385,8 +385,8 @@ function NewAgent({ team, onAdd, onCancel }: { team: Team; onAdd(a: Agent): void
         <div className="row td-new-ident">
           <Avatar avatar={form.avatar} color={form.color} size={44} />
           <div className="col grow">
-            <input className="input" value={form.name} maxLength={40} placeholder={t('Name — e.g. Security')} aria-label={t('Name')} onChange={(e) => set({ name: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && submit()} />
-            <input className="input" value={form.role} maxLength={60} placeholder={t('Role — e.g. Threat modeling & audits')} aria-label={t('Role')} onChange={(e) => set({ role: e.target.value })} />
+            <input className="input" value={form.name} maxLength={60} placeholder={t('Name — e.g. Security')} aria-label={t('Name')} onChange={(e) => set({ name: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && submit()} />
+            <input className="input" value={form.role} maxLength={80} placeholder={t('Role — e.g. Threat modeling & audits')} aria-label={t('Role')} onChange={(e) => set({ role: e.target.value })} />
           </div>
         </div>
         <AvatarPicker avatar={form.avatar} color={form.color} onChange={set} swatches={false} />
