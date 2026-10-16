@@ -5,11 +5,14 @@ import { getProject } from './store'
 import { insideProject } from './files'
 import { record } from './activity'
 
-function git(projectId: string, args: string[], input?: string): Promise<string> {
+// GIT_OPTIONAL_LOCKS=0: the panel polls status, which must not take index.lock from under an agent's own git commands.
+// diff --no-index exits 1 when the files differ, so callers can list extra exit codes that count as success.
+function git(projectId: string, args: string[], input?: string, okCodes: number[] = []): Promise<string> {
   const cwd = getProject(projectId).path
   return new Promise((resolve, reject) => {
-    const child = execFile('git', args, { cwd, timeout: 20_000, maxBuffer: 20 * 1024 * 1024, windowsHide: true }, (err, out, errOut) =>
-      err ? reject(new Error(String(errOut || err.message).trim())) : resolve(out)
+    const opts = { cwd, timeout: 20_000, maxBuffer: 20 * 1024 * 1024, windowsHide: true, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } }
+    const child = execFile('git', args, opts, (err, out, errOut) =>
+      err && !(typeof err.code === 'number' && okCodes.includes(err.code)) ? reject(new Error(String(errOut || err.message).trim())) : resolve(out)
     )
     if (input !== undefined) child.stdin?.end(input)
   })
@@ -57,7 +60,7 @@ export const gitApi = {
     // Untracked files have no diff; show their content as an addition instead.
     if (!out && path && !staged) {
       try {
-        return await git(projectId, ['diff', '--no-color', '--no-index', '--', '/dev/null', path])
+        return await git(projectId, ['diff', '--no-color', '--no-index', '--', '/dev/null', path], undefined, [1])
       } catch (e) {
         return String((e as Error).message)
       }
@@ -68,7 +71,10 @@ export const gitApi = {
     await git(projectId, ['add', '--', ...paths(projectId, files)])
   },
   async unstage(projectId: string, files: string[]): Promise<void> {
-    await git(projectId, ['restore', '--staged', '--', ...paths(projectId, files)])
+    const list = paths(projectId, files)
+    // Before the first commit there is no HEAD to restore from; dropping the paths from the index is the same thing.
+    const hasHead = await git(projectId, ['rev-parse', '--verify', '-q', 'HEAD']).then(() => true, () => false)
+    await git(projectId, hasHead ? ['restore', '--staged', '--', ...list] : ['rm', '--cached', '-r', '-q', '--', ...list])
   },
   async commit(projectId: string, message: string): Promise<void> {
     const msg = String(message ?? '').trim()

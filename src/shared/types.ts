@@ -102,6 +102,7 @@ export interface ChatSummary {
   id: string
   title: string
   engine: EngineId
+  model?: string
   updatedAt: number
   running: boolean
 }

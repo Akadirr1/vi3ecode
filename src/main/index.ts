@@ -44,6 +44,21 @@ function createWindow(): void {
   else void win.loadFile(join(__dirname, '../renderer/index.html'))
 }
 
+// The browser panel's webview may follow links and redirects, but only to web pages; popups load in place.
+app.on('web-contents-created', (_e, contents) => {
+  if (contents.getType() !== 'webview') return
+  contents.on('will-navigate', (e, url) => {
+    if (!/^(https?:|about:blank)/i.test(url)) e.preventDefault()
+  })
+  contents.on('will-redirect', (e, url) => {
+    if (!/^https?:/i.test(url)) e.preventDefault()
+  })
+  contents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) void contents.loadURL(url)
+    return { action: 'deny' }
+  })
+})
+
 app.whenReady().then(() => {
   loadShellPath()
   registerIpc()

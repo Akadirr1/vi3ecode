@@ -11,7 +11,7 @@ import { withHistory } from '../shared/prompt'
 import { matchGuardrail } from '../shared/guardrails'
 import { getProject, getSettings, userDir } from './store'
 import { getAdapter, setUsage } from './engines'
-import { ClaudeSession, type PermissionRequest } from './engines/claudeSession'
+import { ClaudeSession, toolDetail, type PermissionRequest } from './engines/claudeSession'
 import { runTurn, type TurnHandle } from './runner'
 import { applyMemoryWrites, listMemory } from './project'
 import { mcpConfigJson } from './mcp'
@@ -132,8 +132,9 @@ function endTurn(s: ChatSession, r: { text: string; files: string[]; costUsd?: n
 function claudeFor(s: ChatSession): ClaudeSession {
   const existing = claude.get(s.id)
   if (existing?.alive) return existing
+  const cwd = getProject(s.projectId).path
   const cs: ClaudeSession = new ClaudeSession({
-    cwd: getProject(s.projectId).path,
+    cwd,
     approval: s.approval,
     model: s.model,
     effort: s.effort,
@@ -151,9 +152,9 @@ function claudeFor(s: ChatSession): ClaudeSession {
       msg.text += delta || !msg.text ? text : `\n\n${text}`
       push(s)
     },
-    onTool: (name, f) => {
+    onTool: (name, f, detail) => {
       const msg = active.get(s.id) ?? newAssistant(s)
-      msg.tools!.push(f ? `${name} ${f}` : name)
+      msg.tools!.push(detail ? `${name} ${detail}` : name)
       if (f) msg.files = [...new Set([...(msg.files ?? []), f])]
       push(s)
     },
@@ -163,8 +164,8 @@ function claudeFor(s: ChatSession): ClaudeSession {
       const rule = getSettings().guardrails ? matchGuardrail(req.toolName, req.input) : null
       if (!rule && s.approval !== 'read-only' && (s.autoApprove || s.approval === 'full')) return cs.respond(req.id, req, true)
       requests.set(req.id, { sessionId: s.id, req })
-      s.pending.push({ id: req.id, tool: req.tool, detail: describe(req), ts: Date.now(), ...(rule ? { guardrail: rule.title } : {}) })
-      notify(`${s.title}: approval needed`, `${req.tool} ${describe(req)}`)
+      s.pending.push({ id: req.id, tool: req.tool, detail: describe(req, cwd), ts: Date.now(), ...(rule ? { guardrail: rule.title } : {}) })
+      notify(`${s.title}: approval needed`, `${req.tool} ${describe(req, cwd)}`)
       push(s, true)
     },
     onTurnEnd: (r) => {
@@ -181,11 +182,9 @@ function claudeFor(s: ChatSession): ClaudeSession {
   return cs
 }
 
-/** One line for the approval card: the command, file or URL the tool acts on. */
-export function describe(req: PermissionRequest): string {
-  const i = req.input
-  const pick = i.command ?? i.file_path ?? i.notebook_path ?? i.url ?? i.path ?? i.pattern ?? req.description
-  return String(pick ?? '').slice(0, 400)
+/** One line for the approval card: the command, file or URL the tool acts on, paths relative to the project. */
+export function describe(req: PermissionRequest, cwd: string): string {
+  return toolDetail(req.input, cwd) || req.description.slice(0, 300)
 }
 
 function dropPending(s: ChatSession, cs: ClaudeSession): void {
@@ -255,7 +254,7 @@ export const chatApi = {
     return [...sessions.values()]
       .filter((s) => s.projectId === projectId)
       .sort((a, b) => b.updatedAt - a.updatedAt)
-      .map((s) => ({ id: s.id, title: s.title, engine: s.engine, updatedAt: s.updatedAt, running: isBusy(s.id) }))
+      .map((s) => ({ id: s.id, title: s.title, engine: s.engine, model: s.model, updatedAt: s.updatedAt, running: isBusy(s.id) }))
   },
   async get(id: string): Promise<ChatSession | null> {
     loadAll()

@@ -10,6 +10,8 @@ export const browserApi = {
     if (buf.length > 15 * 1024 * 1024) throw new Error('Capture too large')
     const name = `capture-${new Date().toISOString().replace(/[:.]/g, '-')}.png`
     mkdirSync(dataDir(projectId, 'captures'), { recursive: true })
+    // Captures are scratch input for engines, not project history: keep them out of git status and "Stage all".
+    writeFileSync(dataDir(projectId, 'captures', '.gitignore'), '*\n')
     writeFileSync(dataDir(projectId, 'captures', name), buf)
     return `.vi3ecode/captures/${name}`
   }

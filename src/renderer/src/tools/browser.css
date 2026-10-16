@@ -1,0 +1,154 @@
+/* Browser: address bar on top, the <webview> fills the rest. */
+.br {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.br-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 44px;
+  flex: none;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.br-address {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  margin: 0 6px;
+  padding: 0 2px 0 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-3);
+}
+
+.br-address:focus-within {
+  border-color: var(--text-3);
+}
+
+.br-address input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font: 12px var(--mono);
+}
+
+.br-go {
+  width: 24px;
+  height: 24px;
+}
+
+.br-progress {
+  height: 2px;
+  flex: none;
+  margin-top: -2px;
+  overflow: hidden;
+}
+
+.br-progress.on {
+  background: linear-gradient(90deg, transparent, var(--brand), transparent) 0 0 / 40% 100% no-repeat;
+  animation: br-load 1s ease-in-out infinite;
+}
+
+@keyframes br-load {
+  from {
+    background-position: -40% 0;
+  }
+  to {
+    background-position: 140% 0;
+  }
+}
+
+.br-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.br-view {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  background: #fff;
+}
+
+.br-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  background: var(--bg);
+  text-align: center;
+}
+
+.dock .br-empty {
+  background: var(--bg-2);
+}
+
+.br-empty-ico {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 4px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--bg-3);
+  color: var(--text-2);
+}
+
+.br-empty-title {
+  font-weight: 600;
+}
+
+.br-empty-body {
+  max-width: 300px;
+  margin-bottom: 6px;
+  color: var(--text-2);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.br-empty .btn {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+}
+
+.br-note {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  max-width: calc(100% - 28px);
+  transform: translateX(-50%);
+  padding: 7px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.br-note.error {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line-2));
+  color: var(--danger);
+}

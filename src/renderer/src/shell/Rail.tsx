@@ -1,4 +1,4 @@
-import { Blocks, BookOpenText, FolderOpen, Globe, GitBranch, KanbanSquare, Library, NotebookPen, Waypoints, Wrench, type LucideIcon } from 'lucide-react'
+import { Activity, Blocks, BookOpenText, FolderOpen, Globe, GitBranch, KanbanSquare, Library, NotebookPen, Waypoints, type LucideIcon } from 'lucide-react'
 import { useApp, type Tool } from '../context'
 import { t } from '../i18n'
 
@@ -12,10 +12,10 @@ export const TOOL_META: Record<Tool, { label: string; icon: LucideIcon; hint: st
   flow: { label: 'Flow', icon: Waypoints, hint: 'Goals, tasks, reviews and human gates in one run' },
   skills: { label: 'Skills', icon: BookOpenText, hint: 'Portable instruction packs for every engine' },
   plugins: { label: 'Plugins', icon: Blocks, hint: 'Extensions with declared permissions' },
-  activity: { label: 'Activity', icon: Wrench, hint: 'What ran and how it turned out' }
+  activity: { label: 'Activity', icon: Activity, hint: 'What ran and how it turned out' }
 }
 
-const RAIL: Tool[] = ['explorer', 'browser', 'git', 'board', 'notes', 'memory', 'flow', 'plugins']
+const RAIL: Tool[] = ['explorer', 'browser', 'git', 'board', 'notes', 'memory', 'flow', 'plugins', 'activity']
 
 /** Right-hand tool rail: toggles a tool in the dock beside the conversation. */
 export function Rail() {

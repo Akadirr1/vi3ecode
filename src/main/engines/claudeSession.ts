@@ -45,7 +45,8 @@ export interface ClaudeSessionOpts {
   allowedTools?: string[]
   onTurnStart(): void
   onText(text: string, delta?: boolean): void
-  onTool(name: string, file?: string): void
+  /** `detail`: one line of the tool's argument (command, path, pattern or URL), relative paths. */
+  onTool(name: string, file?: string, detail?: string): void
   onSession(id: string): void
   onPermission(req: PermissionRequest): void
   onRateLimit?(info: Record<string, unknown>): void
@@ -249,9 +250,10 @@ export class ClaudeSession {
             const input = (c.input ?? {}) as Record<string, unknown>
             let file = EDIT_TOOLS.includes(name) ? String(input.file_path ?? input.notebook_path ?? '') : ''
             if (file && isAbsolute(file)) file = relative(this.o.cwd, file)
-            this.turn!.tools.push(name)
+            const detail = toolDetail(input, this.o.cwd)
+            this.turn!.tools.push(detail ? `${name} ${detail}` : name)
             if (file) this.turn!.files.add(file)
-            this.o.onTool(name, file || undefined)
+            this.o.onTool(name, file || undefined, detail || undefined)
           }
         }
         return
@@ -285,4 +287,15 @@ export class ClaudeSession {
       }
     }
   }
+}
+
+/** One readable line for a tool call or permission request: the command, file, pattern or URL it acts on. */
+export function toolDetail(input: Record<string, unknown>, cwd: string): string {
+  const pick = input.command ?? input.file_path ?? input.notebook_path ?? input.path ?? input.pattern ?? input.url ?? input.query ?? input.description
+  let s = typeof pick === 'string' ? pick : ''
+  if (s && isAbsolute(s) && !s.includes('\n')) {
+    const rel = relative(cwd, s)
+    if (!rel.startsWith('..')) s = rel || '.'
+  }
+  return s.replace(/\s+/g, ' ').trim().slice(0, 300)
 }

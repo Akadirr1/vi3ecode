@@ -50,7 +50,9 @@ export function App() {
     void api.engines.list().then(setEngines)
     // Usage meters arrive with Claude turns; refresh the list now and then without re-detecting.
     const tick = setInterval(() => void api.engines.list().then(setEngines), 30_000)
-    return () => clearInterval(tick)
+    // An engine asked for the browser panel (vi3ecode-browser MCP): open it so its webview can register.
+    const off = api.browser.onOpen(() => setDock('browser'))
+    return () => (clearInterval(tick), off())
   }, [])
 
   useEffect(() => {
@@ -138,6 +140,7 @@ export function App() {
       attachToChat: (text) => {
         setChatIntent({ text, nonce: Date.now(), append: true })
         setModeState('chat')
+        openTool(null) // a full-size tool would cover the composer the text just went into
       },
       sendToTerminal: (text) => {
         setTerminalIntent({ text, nonce: Date.now() })
@@ -217,7 +220,7 @@ function SideActions() {
       {mode === 'agent' && (
         <button className="side-action" onClick={() => (openTool(null), setRunId(null))}>
           <UsersRound size={15} />
-          {t('New agent thread')}
+          {t('New agent team')}
         </button>
       )}
       <button className="side-action" onClick={openTools}>

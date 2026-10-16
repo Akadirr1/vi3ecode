@@ -53,7 +53,7 @@ describe('codex adapter', () => {
     ])
     expect(ev).toEqual([
       { type: 'session', id: 't1' },
-      { type: 'tool', name: 'shell' },
+      { type: 'tool', name: 'shell ls' },
       { type: 'tool', name: 'edit', file: 'src/a.ts' },
       { type: 'text', text: 'Done.' },
       { type: 'result', isError: true, text: 'boom' }

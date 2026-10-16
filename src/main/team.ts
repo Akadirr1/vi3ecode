@@ -163,15 +163,15 @@ function startAgentTurn(
     allowedTools: getSettings().browserTools ? [...BROWSER_READ_TOOLS, ...(agent.permission === 'read-only' ? [] : BROWSER_ACT_TOOLS)] : undefined,
     onTurnStart: () => {},
     onText: (t, delta) => onText(t, delta),
-    onTool: (n) => onTool(n),
+    onTool: (n, _f, detail) => onTool(detail ? `${n} ${detail}` : n),
     onSession: (sid) => (sessionId = sid),
     onRateLimit: (info) => setUsage('claude', info),
     onPermission: (req) => {
       const rule = getSettings().guardrails ? matchGuardrail(req.toolName, req.input) : null
       if (!rule && agent.permission !== 'read-only' && (team.routing.autoApprove || agent.permission === 'full')) return cs.respond(req.id, req, true)
       requests.set(req.id, { runId: run.id, req, cs })
-      run.pending.push({ id: req.id, tool: req.tool, detail: describe(req), ts: Date.now(), agentId: agent.id, ...(rule ? { guardrail: rule.title } : {}) })
-      notify(`${agent.name} needs approval`, `${req.tool} ${describe(req)}`)
+      run.pending.push({ id: req.id, tool: req.tool, detail: describe(req, cwd), ts: Date.now(), agentId: agent.id, ...(rule ? { guardrail: rule.title } : {}) })
+      notify(`${agent.name} needs approval`, `${req.tool} ${describe(req, cwd)}`)
       push(run, true)
     },
     onTurnEnd: (r) => settle({ text: r.text, tools: r.tools, files: r.files, costUsd: r.costUsd, error: r.error, stopped: r.interrupted, durationMs: r.durationMs }),

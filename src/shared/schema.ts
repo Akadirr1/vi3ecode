@@ -121,7 +121,7 @@ export const DEFAULT_TEAM: Team = {
     {
       id: 'lead',
       name: 'Lead',
-      role: 'orchestrator',
+      role: 'Orchestrator',
       description: 'Splits the goal, routes work to the right agent and reports back. Never writes code itself.',
       avatar: 'portrait:0',
       color: '#34d399',
@@ -134,7 +134,7 @@ export const DEFAULT_TEAM: Team = {
     {
       id: 'analyst',
       name: 'Analyst',
-      role: 'discovery',
+      role: 'Requirements',
       description: 'Maps the code a goal touches and writes the acceptance criteria.',
       avatar: 'portrait:1',
       color: '#60a5fa',
@@ -146,7 +146,7 @@ export const DEFAULT_TEAM: Team = {
     {
       id: 'dev',
       name: 'Developer',
-      role: 'implementation',
+      role: 'Implementation',
       description: 'Implements the brief with tests first and the smallest change that works.',
       avatar: 'portrait:2',
       color: '#fbbf24',
@@ -158,7 +158,7 @@ export const DEFAULT_TEAM: Team = {
     {
       id: 'qa',
       name: 'QA',
-      role: 'tests & review',
+      role: 'Tests & review',
       description: 'Reviews the change and runs the tests; blocks or signs off.',
       avatar: 'portrait:3',
       color: '#a78bfa',
@@ -170,7 +170,7 @@ export const DEFAULT_TEAM: Team = {
     {
       id: 'designer',
       name: 'Designer',
-      role: 'interface',
+      role: 'UI states & copy',
       description: 'Checks the user-facing surface: states, copy, layout and accessibility.',
       avatar: 'portrait:4',
       color: '#f472b6',

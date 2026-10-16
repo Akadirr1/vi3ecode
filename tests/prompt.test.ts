@@ -62,8 +62,8 @@ describe('buildTeamPrompt', () => {
   it('first turn: persona, team, permission, whole thread, task and protocol', () => {
     const turns = [turn({ kind: 'user', agentName: 'You', text: 'Add refresh' }), turn({ text: 'x'.repeat(9000), filesTouched: ['a.ts'] })]
     const p = buildTeamPrompt({ team, agent: agent('dev'), goal: 'Add refresh', turns, note: 'do track A', from: 'Lead' })
-    expect(p).toContain('You are Developer, the implementation agent')
-    expect(p).toContain('- qa — QA (tests & review)')
+    expect(p).toContain('You are Developer, the Implementation agent')
+    expect(p).toContain('- qa — QA (Tests & review)')
     expect(p).toContain('THREAD SO FAR')
     expect(p).toContain('[User] Add refresh')
     expect(p).toContain('[truncated]')

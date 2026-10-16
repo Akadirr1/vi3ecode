@@ -44,7 +44,7 @@ export const codex: EngineAdapter = {
         if (typeof item.text === 'string') out.push({ type: 'text', text: item.text })
         break
       case 'command_execution':
-        out.push({ type: 'tool', name: 'shell' })
+        out.push({ type: 'tool', name: typeof item.command === 'string' ? `shell ${item.command.replace(/\s+/g, ' ').slice(0, 200)}` : 'shell' })
         break
       case 'file_change':
         for (const c of (item.changes as { path?: string }[] | undefined) ?? []) {
