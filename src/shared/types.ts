@@ -277,7 +277,7 @@ export interface MemoryNote {
 
 // ---- activity ----
 
-export type ActivitySource = 'chat' | 'team' | 'terminal' | 'system'
+export type ActivitySource = 'chat' | 'team' | 'flow' | 'terminal' | 'system'
 
 /** Never holds conversation text, tool arguments, file contents or command output. */
 export interface ActivityEvent {

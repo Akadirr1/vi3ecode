@@ -1,0 +1,468 @@
+/* Flow, Skills and Plugins: flat, border-defined, mono metadata. Work at 440px docked and full size. */
+
+.xt {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.xt-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.xt-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-top: 1px solid var(--line);
+}
+
+.xt-meta {
+  font: 11px var(--mono);
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.xt-wrap {
+  white-space: normal;
+}
+
+.xt-ellipsis {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.xt-error {
+  margin: 0;
+  color: var(--danger);
+}
+
+.xt .switch:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Full size: list beside detail. Docked: one pane at a time. */
+.xt-split {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+
+.xt-split > :first-child {
+  border-right: 1px solid var(--line);
+}
+
+.xt-single {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.xt-single > * {
+  flex: 1;
+}
+
+.xt-list,
+.xt-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.xt-section {
+  padding: 10px 8px 4px;
+}
+
+.xt-section:first-child {
+  padding-top: 4px;
+}
+
+.xt-item {
+  padding: 6px 8px;
+}
+
+.xt-item-text {
+  gap: 0;
+}
+
+.xt-item-title,
+.xt-item-sub {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.xt-item.active .xt-item-title {
+  color: var(--text);
+}
+
+.xt-none {
+  padding: 6px 9px;
+}
+
+.xt-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 14px 16px;
+  overflow-y: auto;
+}
+
+.xt-grow {
+  flex: 1;
+  min-height: 200px;
+}
+
+.xt-body {
+  flex: 1;
+  min-height: 180px;
+  font-size: 12px;
+}
+
+.xt-actions {
+  flex-wrap: wrap;
+}
+
+.xt-intro {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 520px;
+  padding: 28px 24px;
+}
+
+.xt-intro h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.xt-intro p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* ---- plugins ---- */
+
+.xt-plugins {
+  gap: 10px;
+  padding: 12px;
+}
+
+.xt-lede {
+  margin: 0 0 2px;
+}
+
+.xt-plugin {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dock .xt-plugin {
+  background: var(--bg);
+}
+
+.xt-plugin.on {
+  border-color: color-mix(in srgb, var(--ok) 35%, var(--line));
+}
+
+.xt-plugin-head {
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.xt-name {
+  display: block;
+  font-weight: 600;
+}
+
+.xt-desc {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.xt-perms {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.xt-perms .badge {
+  gap: 4px;
+}
+
+.xt-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-2);
+  font: 11px var(--mono);
+  text-decoration: none;
+}
+
+.xt-link:hover {
+  color: var(--text);
+}
+
+.xt-engines {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  color: var(--text-2);
+}
+
+.xt-consent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 10px 12px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.xt-consent-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.xt-consent-list svg {
+  color: var(--warn);
+  flex: none;
+}
+
+.xt-cmd {
+  display: block;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  overflow-wrap: anywhere;
+}
+
+.xt-consent p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+/* ---- flow ---- */
+
+.xt-title {
+  min-width: 0;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: 600 15px var(--font);
+}
+
+.xt-title:focus {
+  outline: none;
+  box-shadow: inset 0 -1px 0 var(--text-3);
+}
+
+.xt-steps,
+.xt-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.xt-step {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--text-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+}
+
+.dock .xt-step {
+  background: var(--bg);
+}
+
+.xt-step.review {
+  border-left-color: var(--brand);
+}
+
+.xt-step.gate {
+  border-left-color: var(--warn);
+}
+
+.xt-num {
+  min-width: 16px;
+  font: 600 11px var(--mono);
+  color: var(--text-3);
+}
+
+.xt-kinds {
+  gap: 4px;
+}
+
+.xt-kinds > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.xt-step .textarea {
+  min-height: 48px;
+}
+
+.xt-step-opts {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.xt-step-opts .select,
+.xt-step-opts .input {
+  flex: 1 1 110px;
+  width: auto;
+  min-width: 0;
+  height: 28px;
+  font-size: 12px;
+}
+
+.xt-add {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.xt-run-dot.running {
+  background: var(--brand);
+}
+.xt-run-dot.waiting {
+  background: var(--warn);
+}
+.xt-run-dot.done {
+  background: var(--ok);
+}
+.xt-run-dot.error {
+  background: var(--danger);
+}
+.xt-run-dot.stopped {
+  background: var(--line-2);
+}
+
+.xt-tl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+}
+
+.dock .xt-tl {
+  background: var(--bg);
+}
+
+.xt-tl.waiting {
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--line));
+}
+
+.xt-tl.pending,
+.xt-tl.skipped {
+  opacity: 0.6;
+}
+
+.xt-st {
+  flex: none;
+}
+.xt-st.ok {
+  color: var(--ok);
+}
+.xt-st.warn {
+  color: var(--warn);
+}
+.xt-st.danger {
+  color: var(--danger);
+}
+.xt-st.run {
+  color: var(--brand);
+  animation: xt-spin 1s linear infinite;
+}
+
+@keyframes xt-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.xt-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+}
+
+.xt-gate p {
+  margin: 0;
+}
+
+.xt-out summary {
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.xt-out .prose {
+  max-height: 360px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+}
+
+/* Narrow editors (docked, or beside a dock): step kinds show icons only. */
+.xt-flow {
+  container-type: inline-size;
+}
+
+@container (max-width: 400px) {
+  .xt-kind-label {
+    display: none;
+  }
+}
+
+.xt .input.mono,
+.xt .textarea.mono {
+  font-family: var(--mono);
+  font-size: 12px;
+}

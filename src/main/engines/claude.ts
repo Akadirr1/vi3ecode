@@ -23,6 +23,7 @@ export const claude: EngineAdapter = {
     if (o.resumeId) args.push('--resume', o.resumeId)
     if (o.model) args.push('--model', o.model)
     if (o.effort) args.push('--effort', o.effort)
+    if (o.mcpConfig) args.push('--mcp-config', o.mcpConfig)
     return { args, stdin: withSystem(o) }
   },
   parse(line) {

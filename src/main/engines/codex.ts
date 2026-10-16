@@ -10,6 +10,24 @@ const SANDBOX = {
   full: ['--dangerously-bypass-approvals-and-sandbox']
 }
 
+/** MCP servers as `-c mcp_servers.<name>.…` config overrides (TOML values; JSON strings and arrays are valid TOML). */
+export function codexMcpOverrides(json: string): string[] {
+  let servers: Record<string, { command?: string; args?: string[]; env?: Record<string, string> }> = {}
+  try {
+    servers = (JSON.parse(json) as { mcpServers?: typeof servers }).mcpServers ?? {}
+  } catch {
+    return []
+  }
+  return Object.entries(servers)
+    .filter(([name, s]) => /^[\w-]+$/.test(name) && typeof s.command === 'string')
+    .flatMap(([name, s]) => {
+      const out = ['-c', `mcp_servers.${name}.command=${JSON.stringify(s.command)}`, '-c', `mcp_servers.${name}.args=${JSON.stringify(s.args ?? [])}`]
+      const env = Object.entries(s.env ?? {}).filter(([k]) => /^\w+$/.test(k))
+      if (env.length) out.push('-c', `mcp_servers.${name}.env={${env.map(([k, v]) => `${k}=${JSON.stringify(String(v))}`).join(', ')}}`)
+      return out
+    })
+}
+
 export const codex: EngineAdapter = {
   id: 'codex',
   label: 'Codex',
@@ -22,6 +40,7 @@ export const codex: EngineAdapter = {
     const args = ['exec', '--json', '--skip-git-repo-check', ...SANDBOX[o.approval]]
     if (o.model) args.push('-m', o.model)
     if (o.effort) args.push('-c', `model_reasoning_effort=${o.effort}`)
+    if (o.mcpConfig) args.push(...codexMcpOverrides(o.mcpConfig))
     if (o.resumeId) args.push('resume', o.resumeId)
     args.push('-')
     return { args, stdin: withSystem(o) }

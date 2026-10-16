@@ -37,3 +37,14 @@ export function parseVerdict(text: string): { pass: boolean; reason: string } | 
   const reason = last[2].replace(/^[\s—–:-]+/, '').replace(/[*_`]+$/, '').trim()
   return { pass: last[1].toUpperCase() === 'PASS', reason }
 }
+
+/** Ends a run's steps: the one in flight becomes an error with `reason`, the ones never reached are skipped. */
+export function closeSteps(steps: FlowRunStep[], reason: string, now = Date.now()): FlowRunStep[] {
+  return steps.map((s) =>
+    s.status === 'running' || s.status === 'waiting'
+      ? { ...s, status: 'error', error: s.error ?? reason, endedAt: now }
+      : s.status === 'pending'
+        ? { ...s, status: 'skipped' }
+        : s
+  )
+}

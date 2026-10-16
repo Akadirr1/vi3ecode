@@ -16,7 +16,7 @@ export const TOOL_META: Record<Tool, { label: string; icon: LucideIcon; hint: st
   activity: { label: 'Activity', icon: Activity, hint: 'What ran and how it turned out' }
 }
 
-const RAIL: Tool[] = ['explorer', 'browser', 'git', 'board', 'notes', 'memory', 'flow', 'plugins', 'activity']
+const RAIL: Tool[] = ['explorer', 'browser', 'git', 'board', 'notes', 'memory', 'flow', 'skills', 'plugins', 'activity']
 
 /** Right-hand tool rail: toggles a tool in the dock beside the conversation. */
 export function Rail() {

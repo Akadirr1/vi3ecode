@@ -92,3 +92,17 @@ describe('opencode adapter', () => {
     ])
   })
 })
+
+import { codexMcpOverrides } from '../src/main/engines/codex'
+
+describe('codex MCP overrides', () => {
+  it('turns mcpServers JSON into -c overrides with TOML values', () => {
+    const json = JSON.stringify({ mcpServers: { 'vi3ecode-rea': { command: 'npx', args: ['-y', 'rea-agents@6.5.0', '--mcp'] }, 'bad name!': { command: 'x' }, b: { command: '/app', args: [], env: { RUN: '1' } } } })
+    expect(codexMcpOverrides(json)).toEqual([
+      '-c', 'mcp_servers.vi3ecode-rea.command="npx"', '-c', 'mcp_servers.vi3ecode-rea.args=["-y","rea-agents@6.5.0","--mcp"]',
+      '-c', 'mcp_servers.b.command="/app"', '-c', 'mcp_servers.b.args=[]', '-c', 'mcp_servers.b.env={RUN="1"}'
+    ])
+    expect(codex.build!({ prompt: 'p', approval: 'edits', mcpConfig: json }).args.at(-1)).toBe('-')
+    expect(codexMcpOverrides('not json')).toEqual([])
+  })
+})

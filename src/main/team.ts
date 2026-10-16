@@ -133,7 +133,8 @@ function startAgentTurn(
 ): AgentTurn {
   const adapter = getAdapter(agent.engine)
   if (agent.engine !== 'claude') {
-    return runTurn(adapter, cwd, { prompt, model: agent.model, effort: agent.effort, approval: agent.permission, resumeId: adapter.resumes ? resumeId : undefined }, (e) => {
+    const opts = { prompt, model: agent.model, effort: agent.effort, approval: agent.permission, resumeId: adapter.resumes ? resumeId : undefined, mcpConfig: mcpConfigJson(state.run.projectId) }
+    return runTurn(adapter, cwd, opts, (e) => {
       if (e.type === 'text') onText(e.text, e.delta)
       else if (e.type === 'tool') onTool(e.name)
     })

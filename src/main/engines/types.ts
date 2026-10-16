@@ -9,6 +9,8 @@ export interface TurnOpts {
   approval: ApprovalMode
   /** Engine-side session id from a previous turn, to continue that conversation. */
   resumeId?: string
+  /** `{"mcpServers":{…}}` JSON: plugin servers and the browser panel bridge, for engines that take MCP per run. */
+  mcpConfig?: string
 }
 
 /** Normalized stream events, whatever the engine. */

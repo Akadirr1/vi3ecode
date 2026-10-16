@@ -8,7 +8,7 @@ import { EngineIcon } from '../components/EngineIcon'
 import { formatCost, relativeTime } from '../components/format'
 import './project-tools.css'
 
-const SOURCES: ActivitySource[] = ['chat', 'team', 'terminal', 'system']
+const SOURCES: ActivitySource[] = ['chat', 'team', 'flow', 'terminal', 'system']
 const OUTCOME_BADGE: Record<ActivityEvent['outcome'], string> = { ok: 'ok', error: 'danger', stopped: 'warn', info: '' }
 const OUTCOME_COLOR: Record<ActivityEvent['outcome'], string> = { ok: 'var(--ok)', error: 'var(--danger)', stopped: 'var(--warn)', info: 'var(--text-3)' }
 const LIVE = [

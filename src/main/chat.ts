@@ -223,7 +223,7 @@ function startTurn(s: ChatSession, userMsg: ChatMessage): void {
   const handle = runTurn(
     adapter,
     project.path,
-    { prompt, system: systemText(s.projectId), model: s.model, effort: s.effort, approval: s.approval, resumeId: canResume ? s.engineSessionId : undefined },
+    { prompt, system: systemText(s.projectId), model: s.model, effort: s.effort, approval: s.approval, resumeId: canResume ? s.engineSessionId : undefined, mcpConfig: mcpConfigJson(s.projectId) },
     (e) => {
       if (e.type === 'text') {
         msg.text += e.delta || !msg.text ? e.text : `\n\n${e.text}`
