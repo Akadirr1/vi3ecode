@@ -227,13 +227,13 @@ alır (`ANTHROPIC_API_KEY` gibi anahtarlar aboneliği ezebilir, `cli §0.6`).
 
 | Alan | vi3ecode'da | Bizde | Durum | Neden |
 |---|---|---|---|---|
-| Bot Mode | macOS-öncelikli kişisel ajanlar, SQLite, rutinler, ~45 araçlı `vi3ecode-bots` MCP, `/api/entitlements/bot-run` izni (`bin §11`) | Yok | ➖ | Deneysel, sunucu izni ve ayrı veri modeli gerektirir; çekirdek iş değil (`spec §6.2` Tier 2) |
-| Canvas (Lab), Work, Graph | `canvas.json`/`canvas-labs/`, `graphs/`, Lab/Graph ajanları (`bin §7.1`) | Yok | ➖ | Büyük yüzeyler, ayrı AI istemleri; ajan takımına bağımlı değiller |
+| Bot Mode | macOS-öncelikli kişisel ajanlar, SQLite, rutinler, ~45 araçlı `vi3ecode-bots` MCP, `/api/entitlements/bot-run` izni (`bin §11`) | Yok | ➖ | Henüz yapılmadı. Orijinalde sunucu yalnızca hesap izni veriyor (`bot-run`); işin kendisi kullanıcının motorlarında ve yerel SQLite'ta çalışıyor, bizde sunucu gerekmez (`spec §6.2` Tier 2) |
+| Canvas (Lab), Work, Graph | `canvas.json`/`canvas-labs/`, `graphs/`, Lab/Graph ajanları (`bin §7.1`) | Yok | ➖ | Henüz yapılmadı; büyük yüzeyler, ayrı AI istemleri. Kullanıcının motorlarında çalışır, sunucu gerekmez |
 | Marketing Studio, Deploy | `marketing.json`, ffmpeg, Postiz/Oppus yayını; `vib3-deploy` arka ucu | Yok | ➖ | Üçüncü taraf hizmet ve sunucu gerektirir |
 | Remote / Mobil | `wss` röle, ECDH + AES-GCM, 6 haneli karşılaştırma kodu, kill switch (`bin §11`) | Yok | ➖ | Röle sunucusu ve mobil uygulama ister |
 | Hesap, ödeme, bulut senkron | Giriş (device code), Polar ödeme, yetkiler, 2 cihaz sınırı, senkron, referans | Yok | ➖ | Bilinçli: yerel, hesapsız, MIT. Orijinalde Agent Mode bile canlı oturum ister |
 | Ses | Dikte (OpenRouter/Groq), Voice Chat (Codex realtime/WebRTC), Voice Assistant (24 araç) | Yok | ➖ | Üçüncü taraf anahtarı + WebRTC; çekirdek iş değil |
-| Otomatik güncelleme | Tauri updater, minisign imzalı manifest | Yok. Sürüm GitHub Actions artifact'ı / Release (prerelease) | ➖ | İmza sertifikası ve güncelleme sunucusu gerekir; README imzasız kurulumu anlatır |
+| Otomatik güncelleme | Tauri updater, minisign imzalı manifest | Yok. Sürüm GitHub Actions artifact'ı / Release (prerelease) | ➖ | Henüz yapılmadı. Sunucu gerekmez (GitHub Releases + electron-updater); macOS'ta otomatik güncelleme imzalı build ister. README imzasız kurulumu anlatır |
 | Güvenlik denetimi, kod inceleme paneli, doğrulama servisi, proje iskeleleri (`template_*`), Init Project sihirbazı | Var | Yok | ➖ | AI denetim turları ve şablon veri seti; sonraya |
 
 ---
