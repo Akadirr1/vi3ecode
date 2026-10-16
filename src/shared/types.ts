@@ -130,6 +130,10 @@ export interface Agent {
   lead?: boolean
   /** Agent ids this agent may hand off to; empty means anyone. */
   handoffs: string[]
+  /** A paused agent takes no turns: handoffs to it wait, user messages go to the lead. */
+  paused?: boolean
+  /** Parallel copies of this role, 1–8 (`dev`, `dev~2`…); the lead always runs as one. */
+  instanceCount?: number
 }
 
 export interface TeamRouting {

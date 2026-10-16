@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { buildTeamPrompt, decideNext, parseTurnEnd, withHistory } from '../src/shared/prompt'
+import { agentById, buildTeamPrompt, decideNext, entryIds, parseTurnEnd, withHistory } from '../src/shared/prompt'
 import { DEFAULT_TEAM, sanitizeTeam } from '../src/shared/schema'
-import type { TeamTurn } from '../src/shared/types'
+import type { Agent, TeamTurn } from '../src/shared/types'
 
 const team = DEFAULT_TEAM
 const names = team.agents.map((a) => a.name)
@@ -10,7 +10,8 @@ const agent = (id: string) => team.agents.find((a) => a.id === id)!
 describe('parseTurnEnd', () => {
   it('reads @handoff with one or more ids, copies and decoration', () => {
     expect(parseTurnEnd('Mapped the deps.\n\n@handoff dev: implement token refresh', names)).toEqual({ handoff: { to: ['dev'], note: 'implement token refresh' } })
-    expect(parseTurnEnd('**@handoff qa, designer, dev~2: check it**', names).handoff).toEqual({ to: ['qa', 'designer', 'dev'], note: 'check it' })
+    expect(parseTurnEnd('**@handoff qa, designer, dev~2: check it**', names).handoff).toEqual({ to: ['qa', 'designer', 'dev~2'], note: 'check it' })
+    expect(parseTurnEnd('@handoff dev~1: just the first copy', names).handoff).toEqual({ to: ['dev'], note: 'just the first copy' })
   })
   it('reads @done and @ask-user (text or questions JSON)', () => {
     expect(parseTurnEnd('All good.\n@done: shipped session refresh', names)).toEqual({ done: 'shipped session refresh' })
@@ -55,6 +56,43 @@ describe('decideNext', () => {
     expect(decideNext(team, agent('dev'), { handoff: { to: ['Nobody'], note: '' } })).toMatchObject({ kind: 'handoff', agentIds: ['lead'] })
     expect(decideNext(team, agent('lead'), {})).toMatchObject({ kind: 'wait' })
     expect(decideNext(team, agent('lead'), { handoff: { to: ['lead'], note: '' } })).toMatchObject({ kind: 'wait' })
+  })
+})
+
+describe('parallel copies and paused agents', () => {
+  const copies = (over: Partial<Agent> = {}) => ({ ...team, agents: team.agents.map((a) => (a.id === 'dev' ? { ...a, instanceCount: 3, ...over } : a)) })
+  it('a role id reaches every copy, `dev~2` only that one', () => {
+    expect(decideNext(copies(), agent('lead'), { handoff: { to: ['dev'], note: 'split it' } })).toEqual({ kind: 'handoff', agentIds: ['dev', 'dev~2', 'dev~3'], note: 'split it' })
+    expect(decideNext(copies(), agent('lead'), { handoff: { to: ['dev~2'], note: 'x' } })).toMatchObject({ agentIds: ['dev~2'] })
+    expect(decideNext(copies(), agent('lead'), { handoff: { to: ['dev~9'], note: 'x' } })).toMatchObject({ kind: 'wait' })
+    expect(agentById(copies(), 'dev~1')?.id).toBe('dev')
+    expect(agentById(copies(), 'dev~3')?.name).toBe('Developer #3')
+  })
+  it('a paused role is reached only on its first copy, which then waits', () => {
+    expect(decideNext(copies({ paused: true }), agent('lead'), { handoff: { to: ['dev'], note: 'x' } })).toMatchObject({ agentIds: ['dev'] })
+  })
+  it('a user message reaches every copy, and skips paused agents', () => {
+    expect(entryIds(copies(), 'dev')).toEqual(['dev', 'dev~2', 'dev~3'])
+    expect(entryIds(copies(), 'dev~1')).toEqual(['dev'])
+    expect(entryIds(copies({ paused: true }), 'dev')).toEqual(['lead'])
+    const leadPaused = { ...team, agents: team.agents.map((a) => (a.lead ? { ...a, paused: true } : a)) }
+    expect(entryIds(leadPaused)).toEqual(['analyst'])
+    expect(() => entryIds({ ...team, agents: team.agents.map((a) => ({ ...a, paused: true })) })).toThrow('Every agent is paused')
+  })
+  it('a copy cannot hand off to its own role', () => {
+    const t = copies()
+    expect(decideNext(t, agentById(t, 'dev~2')!, { handoff: { to: ['dev'], note: 'x' } })).toMatchObject({ kind: 'handoff', agentIds: ['lead'], note: 'Developer #2 handed off to itself.' })
+    expect(decideNext(t, agentById(t, 'dev~2')!, { handoff: { to: ['qa'], note: 'x' } })).toMatchObject({ agentIds: ['qa'] })
+  })
+  it('the prompt lists every copy, marks paused agents and tells a copy to take its own share', () => {
+    const t = copies()
+    t.agents = t.agents.map((a) => (a.id === 'qa' ? { ...a, paused: true } : a))
+    const lead = buildTeamPrompt({ team: t, agent: agent('lead'), goal: 'g', turns: [] })
+    expect(lead).toContain('- dev~2 — Developer #2 (Implementation)')
+    expect(lead).toContain('- qa — QA (Tests & review) [paused]')
+    expect(lead).toContain('you may hand off to: analyst, dev, designer')
+    expect(lead).toContain('dev runs as 3 copies')
+    expect(buildTeamPrompt({ team: t, agent: agentById(t, 'dev~2')!, goal: 'g', turns: [] })).toContain('one of 3 copies of this role; dev, dev~3 may get the same brief')
   })
 })
 

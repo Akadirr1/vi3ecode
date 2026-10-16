@@ -44,6 +44,25 @@ describe('team routing, budget and handoffs', () => {
   })
 })
 
+describe('team pause and parallel copies', () => {
+  it('keeps paused only when true and clamps copies to 1–8, the lead to one', () => {
+    const t = sanitizeTeam({
+      agents: [
+        { id: 'lead', name: 'Lead', lead: true, instanceCount: 4, paused: true },
+        { id: 'a', name: 'A', instanceCount: 0, paused: 'yes' },
+        { id: 'b', name: 'B', instanceCount: 9 },
+        { id: 'c', name: 'C', instanceCount: 2.6 }
+      ]
+    })
+    expect(t.agents.map((a) => [a.id, a.instanceCount, a.paused])).toEqual([
+      ['lead', undefined, true],
+      ['a', undefined, undefined],
+      ['b', 8, undefined],
+      ['c', 3, undefined]
+    ])
+  })
+})
+
 describe('sanitizeFlow', () => {
   it('keeps known step kinds and drops bad engines', () => {
     const f = sanitizeFlow({ id: 'f1', name: 'Ship', steps: [{ kind: 'gate', title: 'OK?' }, { kind: 'weird', engine: 'nope', approval: 'auto' }] })

@@ -185,6 +185,12 @@ export const DEFAULT_TEAM: Team = {
   budget: { turns: 0, usd: 0 }
 }
 
+/** Parallel copies of a role, 1–8; 1 is left out, as vi3ecode writes it. */
+const copies = (v: unknown): number | undefined => {
+  const n = Math.min(8, Math.max(1, Math.round(num(v, 1))))
+  return n > 1 ? n : undefined
+}
+
 export function sanitizeTeam(raw: unknown): Team {
   if (!isObj(raw) || !Array.isArray(raw.agents)) return structuredClone(DEFAULT_TEAM)
   const agents = raw.agents.filter(isObj).slice(0, 50).map(
@@ -201,7 +207,9 @@ export function sanitizeTeam(raw: unknown): Team {
       permission: approvalOf(a.permission, 'read-only'),
       instructions: str(a.instructions, 50_000), // room for long vi3ecode prompts: a save must not cut them
       lead: a.lead === true || undefined,
-      handoffs: (Array.isArray(a.handoffs) ? a.handoffs : []).map((h) => str(h, 64)).filter(Boolean)
+      handoffs: (Array.isArray(a.handoffs) ? a.handoffs : []).map((h) => str(h, 64)).filter(Boolean),
+      paused: a.paused === true || undefined,
+      instanceCount: copies(a.instanceCount)
     })
   )
   if (agents.length === 0) return structuredClone(DEFAULT_TEAM)
@@ -220,6 +228,7 @@ export function sanitizeTeam(raw: unknown): Team {
   // Exactly one lead: the first flagged one, else the first agent.
   const leadIdx = Math.max(0, agents.findIndex((a) => a.lead))
   agents.forEach((a, i) => (a.lead = i === leadIdx || undefined))
+  agents[leadIdx].instanceCount = undefined // the lead always runs as one
   // Names route handoffs, so they must be unique.
   const names = new Set<string>()
   const ids = new Set<string>()

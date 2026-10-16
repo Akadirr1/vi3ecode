@@ -681,5 +681,17 @@
   "Plan": "Plan",
   "Let the agent inspect, edit, and run the project with your approval policy.": "Ajanın onay politikanla projeyi incelemesine, düzenlemesine ve çalıştırmasına izin ver.",
   "Analyze in read-only mode and produce an implementation plan.": "Salt okunur modda analiz et ve bir uygulama planı oluştur.",
-  "Back to Build": "Build'e dön"
+  "Back to Build": "Build'e dön",
+  "Pause agent": "Ajanı duraklat",
+  "Resume agent": "Ajanı sürdür",
+  "paused": "duraklatıldı",
+  "Parallel copies": "Paralel kopya",
+  "The Lead always runs as one.": "Lead her zaman tek kopya çalışır.",
+  "Fewer copies": "Kopya sayısını azalt",
+  "More copies": "Kopya sayısını artır",
+  "A handoff to this role reaches every copy at once. Writers still take turns in the same folder.": "Bu role yapılan devir tüm kopyalara aynı anda gider. Yazarlar aynı klasörde yine sırayla çalışır.",
+  "A copy that would go away is still working, asking or in a parallel wave — try again once it finishes.": "Kaldırılacak bir kopya hâlâ çalışıyor, soru bekliyor ya da paralel bir dalgada — bitince tekrar dene.",
+  "A team can run at most 64 agents in total.": "Bir takım toplamda en fazla 64 ajan çalıştırabilir.",
+  "Every agent is paused — this thread cannot take a task.": "Tüm ajanlar duraklatıldı — bu thread görev alamaz.",
+  "{name} is paused — resume it in the team settings, or pick who goes next.": "{name} duraklatıldı — takım ayarlarından sürdür ya da sıradakini seç."
 }

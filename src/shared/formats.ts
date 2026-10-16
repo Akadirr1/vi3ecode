@@ -36,8 +36,6 @@ export function teamToDisk(team: Team, projectId: string, prev: unknown = null):
     updatedAt: nowIso(),
     agents: team.agents.map((a) => ({
       tools: [],
-      paused: false,
-      instanceCount: 1,
       ...prevAgents.get(a.id),
       id: a.id,
       name: a.name,
@@ -51,7 +49,9 @@ export function teamToDisk(team: Team, projectId: string, prev: unknown = null):
       prompt: a.instructions,
       handoffs: a.handoffs,
       permission: PERM_TO_DISK[a.permission],
-      ...(a.lead ? { lead: true } : {})
+      ...(a.lead ? { lead: true } : {}),
+      paused: !!a.paused,
+      instanceCount: a.instanceCount && a.instanceCount > 1 ? a.instanceCount : undefined
     })),
     settings: {
       autoApproveParallelResults: false,

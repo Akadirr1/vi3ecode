@@ -1,6 +1,7 @@
 // The open project's team and threads, shared by the sidebar, the thread view and the team dialog.
 import { useEffect, useSyncExternalStore } from 'react'
 import type { RunStatus, Team, TeamRun } from '../../../../shared/types'
+import { roleOf } from '../../../../shared/prompt'
 import { api } from '../../api'
 
 const teams = new Map<string, Team>()
@@ -60,10 +61,10 @@ export async function saveTeam(projectId: string, team: Team): Promise<Team> {
   return saved
 }
 
-/** Agent ids with a turn running in any of these threads. */
+/** Agent ids with a turn running in any of these threads; a working copy (`dev~2`) also marks its role. */
 export function workingAgents(list: TeamRun[]): Set<string> {
   const ids = new Set<string>()
-  for (const r of list) if (r.status === 'running') for (const turn of r.turns) if (turn.kind === 'agent' && turn.status === 'running') ids.add(turn.agentId)
+  for (const r of list) if (r.status === 'running') for (const turn of r.turns) if (turn.kind === 'agent' && turn.status === 'running') ids.add(turn.agentId).add(roleOf(turn.agentId))
   return ids
 }
 

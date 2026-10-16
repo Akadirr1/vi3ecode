@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, CircleAlert, CircleCheck, CirclePause, LoaderCircle, Lock, Settings, Square, UserPlus } from 'lucide-react'
 import type { Agent, TeamRun } from '../../../../shared/types'
+import { roleOf } from '../../../../shared/prompt'
 import { useApp } from '../../context'
 import { t } from '../../i18n'
 import { Avatar } from '../../components/Avatar'
@@ -18,6 +19,7 @@ export function AgentSidebar() {
   const [dialog, setDialog] = useState<string | null>(null)
   const working = workingAgents(runs)
   const agents = team?.agents ?? []
+  const listed = [...agents].sort((a, b) => Number(!!a.paused) - Number(!!b.paused)) // paused last, as in vi3ecode
 
   return (
     <>
@@ -35,7 +37,7 @@ export function AgentSidebar() {
         </button>
       </div>
       {open
-        ? agents.map((a) => {
+        ? listed.map((a) => {
             const busy = working.has(a.id)
             return (
               <button
@@ -45,7 +47,7 @@ export function AgentSidebar() {
                 onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), setDialog(a.id))}
                 title={t('Double-click to edit {name}', { name: a.name })}
               >
-                <Avatar avatar={a.avatar} color={a.color} size={30} status={busy ? 'working' : 'idle'} />
+                <Avatar avatar={a.avatar} color={a.color} size={30} status={a.paused ? 'paused' : busy ? 'working' : 'idle'} />
                 <span className="am-agent-text">
                   <span className="am-agent-line">
                     <strong>{a.name}</strong>
@@ -56,7 +58,7 @@ export function AgentSidebar() {
                     <EngineIcon engine={a.engine} size={11} />
                     <span className="am-model">{a.model || engines.find((e) => e.id === a.engine)?.label || a.engine}</span>
                     <span>·</span>
-                    <span className={busy ? 'am-working' : undefined}>{busy ? t('working') : t('idle')}</span>
+                    <span className={a.paused ? 'faint' : busy ? 'am-working' : undefined}>{a.paused ? t('paused') : busy ? t('working') : t('idle')}</span>
                   </span>
                 </span>
               </button>
@@ -92,7 +94,7 @@ function ThreadIcon({ run, agents }: { run: TeamRun; agents: Agent[] }) {
   if (run.status === 'running') {
     // The agent holding the turn; the spinner sits on the right.
     const turn = run.turns.findLast((x) => x.kind === 'agent' && x.status === 'running')
-    const a = agents.find((x) => x.id === turn?.agentId)
+    const a = agents.find((x) => x.id === roleOf(turn?.agentId ?? ''))
     return a ? <Avatar avatar={a.avatar} color={a.color} size={18} title={a.name} /> : <LoaderCircle size={15} className="am-spin" aria-label={label} />
   }
   if (run.status === 'done') return <CircleCheck size={15} className="am-ok" aria-label={label} />

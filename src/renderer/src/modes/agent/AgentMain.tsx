@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { ArrowRight, Bug, Hammer, ListChecks, Lock, SlidersHorizontal, Users } from 'lucide-react'
 import type { Agent, TeamRun } from '../../../../shared/types'
+import { roleOf } from '../../../../shared/prompt'
 import { useApp } from '../../context'
 import { t } from '../../i18n'
 import { Avatar } from '../../components/Avatar'
@@ -63,10 +64,11 @@ export function AgentMain() {
             <p className="muted">{t('Write a goal below. The Lead breaks it down and passes each step to the right agent; every handoff shows up in this thread.')}</p>
             <div className="am-roster">
               {agents.map((a) => (
-                <button key={a.id} className="am-roster-chip" onClick={() => setDialog(a.id)} title={t('Edit {name}', { name: a.name })}>
+                <button key={a.id} className={`am-roster-chip${a.paused ? ' paused' : ''}`} onClick={() => setDialog(a.id)} title={t('Edit {name}', { name: a.name })}>
                   <Avatar avatar={a.avatar} color={a.color} size={22} />
                   <strong>{a.name}</strong>
                   <span className="am-role">{a.role}</span>
+                  {a.paused ? <span className="faint">· {t('paused')}</span> : null}
                   {a.permission === 'read-only' ? <Lock size={11} className="faint" aria-label={t('Read-only')} /> : null}
                 </button>
               ))}
@@ -107,7 +109,7 @@ function Capsule({ run, agents }: { run: TeamRun; agents: Agent[] }) {
   const turns = run.turns.filter((x) => x.kind === 'agent')
   const last = turns.at(-1)
   if (!last) return null
-  const byId = (id?: string) => agents.find((a) => a.id === id)
+  const byId = (id?: string) => agents.find((a) => a.id === roleOf(id ?? ''))
   const live = last.status === 'running'
   const current = byId(live ? last.agentId : (run.next?.agentId ?? last.agentId))
   const prev = byId(live || !run.next ? turns.at(-2)?.agentId : last.agentId)

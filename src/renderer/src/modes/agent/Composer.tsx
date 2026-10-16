@@ -1,6 +1,7 @@
-import { useState, type Ref } from 'react'
+import { Fragment, useState, type Ref } from 'react'
 import { FilePen, Lock, SendHorizontal, ShieldQuestion, Square, Zap } from 'lucide-react'
 import type { Agent, ApprovalMode, Team, TeamRun } from '../../../../shared/types'
+import { copyCount, roleOf } from '../../../../shared/prompt'
 import { api } from '../../api'
 import { useApp } from '../../context'
 import { t } from '../../i18n'
@@ -16,19 +17,19 @@ const CAN: Record<ApprovalMode, [string, typeof Lock]> = {
 }
 
 /** to: chips, the message box, AUTO-RELAY / AUTO-APPROVE, Stop and Send. No thread selected: Send starts one. */
-/** `to` is an agent id ('' = Auto); it lives in AgentMain so it survives the start screen → thread switch. */
+/** `to` is an agent id ('' = Auto), or one copy of it (`dev~2`); it lives in AgentMain so it survives the start screen → thread switch. */
 export function Composer({ run, team, text, setText, to, setTo, inputRef }: { run: TeamRun | null; team: Team | null; text: string; setText(v: string): void; to: string; setTo(id: string): void; inputRef: Ref<HTMLTextAreaElement> }) {
   const { project, setRunId } = useApp()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const agents = team?.agents ?? []
   const lead = agents.find((a) => a.lead) ?? agents[0]
-  const target: Agent | undefined = agents.find((a) => a.id === to)
+  const target: Agent | undefined = agents.find((a) => a.id === roleOf(to))
   const running = run?.status === 'running'
-  // Auto: the team can edit when anyone on it may write.
-  const level: ApprovalMode = target?.permission ?? (agents.some((a) => a.permission !== 'read-only') ? 'edits' : 'read-only')
+  // Auto: the team can edit when anyone on it who is not paused may write.
+  const level: ApprovalMode = target?.permission ?? (agents.some((a) => !a.paused && a.permission !== 'read-only') ? 'edits' : 'read-only')
   const [canLabel, CanIcon] = CAN[level]
-  const asker = run?.question && !target ? agents.find((a) => a.id === run.next?.agentId) : undefined
+  const asker = run?.question && !target ? agents.find((a) => a.id === roleOf(run.next?.agentId ?? '')) : undefined
   const placeholder = asker
     ? t('Answer {name}…', { name: asker.name })
     : running
@@ -43,15 +44,15 @@ export function Composer({ run, team, text, setText, to, setTo, inputRef }: { ru
     setBusy(true)
     setError('')
     try {
-      if (run) await api.team.send(run.id, body, target?.id)
+      if (run) await api.team.send(run.id, body, target ? to : undefined)
       else {
-        const r = await api.team.start(project.id, body, target?.id)
+        const r = await api.team.start(project.id, body, target ? to : undefined)
         putRun(r)
         setRunId(r.id)
       }
       setText('')
     } catch (e) {
-      setError(errorText(e))
+      setError(t(errorText(e)))
     } finally {
       setBusy(false)
     }
@@ -65,11 +66,25 @@ export function Composer({ run, team, text, setText, to, setTo, inputRef }: { ru
         <button className="chip" aria-pressed={!target} onClick={() => setTo('')}>
           {t('Auto (Lead routes)')}
         </button>
-        {agents.map((a) => (
-          <button key={a.id} className="chip" aria-pressed={a.id === to} onClick={() => setTo(a.id)}>
-            <Avatar avatar={a.avatar} color={a.color} size={15} />@{a.name}
-          </button>
-        ))}
+        {agents.map((a) => {
+          const n = copyCount(a)
+          return (
+            <Fragment key={a.id}>
+              <button className="chip" aria-pressed={a.id === target?.id} disabled={a.paused} onClick={() => setTo(a.id)}>
+                <Avatar avatar={a.avatar} color={a.color} size={15} />@{a.name}
+                {n > 1 ? ` ×${n}` : ''}
+              </button>
+              {/* One copy of the selected role; #1 is the role's own id. */}
+              {n > 1 && a.id === target?.id
+                ? Array.from({ length: n }, (_, i) => (
+                    <button key={i} className="chip" aria-pressed={to === `${a.id}~${i + 1}`} onClick={() => setTo(`${a.id}~${i + 1}`)}>
+                      #{i + 1}
+                    </button>
+                  ))
+                : null}
+            </Fragment>
+          )
+        })}
         <span className="am-can" title={t(APPROVAL_LABEL[level].hint)}>
           <CanIcon size={12} aria-hidden />
           {t(canLabel)}

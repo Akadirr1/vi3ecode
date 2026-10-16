@@ -33,7 +33,8 @@ Side-by-side details: [MAPPING.md](MAPPING.md).
 - [x] Auto-relay, Return to Lead, hop limit, budget (turns / USD), AUTO-APPROVE, per-agent resumed sessions
 - [x] Messages into a running thread (steer the working agent or address @Agent), approval cards, question cards
 - [x] Global agents library (app level)
-- [ ] Supervision turns, plan mode, worktrees per agent, parallel copies (`dev~2`), pause agent
+- [x] Pause agent, parallel copies of a role (`dev~2`, up to 8; the Lead runs as one); copy waves run in order
+- [ ] Supervision turns, plan mode, worktrees per agent
 
 ## Terminal Mode
 

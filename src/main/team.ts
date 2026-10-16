@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync, readdirSync, rmSync } from 'node:fs'
 import type { Agent, GlobalTeam, Team, TeamRun, TeamTurn } from '../shared/types'
 import { buildBrief, WRITE_BACK_INSTRUCTION } from '../shared/memory'
-import { buildTeamPrompt, decideNext, findAgent, leadOf, parseTurnEnd } from '../shared/prompt'
+import { agentById, buildTeamPrompt, decideNext, entryIds, findAgent, leadOf, parseTurnEnd } from '../shared/prompt'
 import { matchGuardrail } from '../shared/guardrails'
 import { getProject, getSettings, userDir } from './store'
 import { applyMemoryWrites, listMemory, readTeam, writeTeam } from './project'
@@ -218,8 +218,13 @@ async function runNext(state: RunState): Promise<void> {
   if (run.hops - state.hopBase >= routing.hopLimit) return finish(state, 'hop-cap')
 
   const lead = leadOf(team)
-  const agent = team.agents.find((a) => a.id === run.next?.agentId) ?? lead
+  const agent = agentById(team, run.next?.agentId) ?? lead
   const note = run.next?.note
+  // A handoff to a paused agent stays pending with its brief, for Continue once it is resumed (as in vi3ecode).
+  if (agent.paused) {
+    run.next = { agentId: agent.id, note: note ?? '' }
+    return finish(state, 'waiting')
+  }
   const from = [...run.turns].reverse().find((t) => t.kind === 'agent' && t.status !== 'running')?.agentName
   const adapter = getAdapter(agent.engine)
 
@@ -255,7 +260,7 @@ async function runNext(state: RunState): Promise<void> {
     note,
     from,
     since: resumeId ? prior!.lastTurn : undefined,
-    wave: waveMembers?.map((id) => team.agents.find((a) => a.id === id)?.name ?? id)
+    wave: waveMembers?.map((id) => agentById(team, id)?.name ?? id)
   })
   const prompt = system.length ? `${system.join('\n\n')}\n\n---\n\n${body}` : body
 
@@ -313,7 +318,7 @@ async function runNext(state: RunState): Promise<void> {
   }
   turn.status = 'done'
   const end = parseTurnEnd(turn.text, team.agents.map((a) => a.name))
-  if (end.handoff) turn.handoff = { to: end.handoff.to.map((id) => findAgent(team, id)?.name ?? id).join(', '), note: end.handoff.note }
+  if (end.handoff) turn.handoff = { to: end.handoff.to.map((id) => (findAgent(team, id) ?? agentById(team, id))?.name ?? id).join(', '), note: end.handoff.note }
   if (end.done !== undefined) turn.done = end.done
   run.question = undefined
 
@@ -321,11 +326,11 @@ async function runNext(state: RunState): Promise<void> {
   if (state.wave?.members.includes(agent.id)) {
     const wave = state.wave
     const nextId = wave.queue.shift()
-    run.hops++
     if (nextId) run.next = { agentId: nextId, note: wave.note }
     else {
+      run.hops++ // the results going back count as one hop, however many branches ran (as in vi3ecode)
       state.wave = undefined
-      run.next = { agentId: wave.from, note: `Parallel results from ${wave.members.map((id) => team.agents.find((a) => a.id === id)?.name ?? id).join(', ')} are in the thread.` }
+      run.next = { agentId: wave.from, note: `Parallel results from ${wave.members.map((id) => agentById(team, id)?.name ?? id).join(', ')} are in the thread.` }
     }
     save(run)
     return runNext(state)
@@ -333,7 +338,7 @@ async function runNext(state: RunState): Promise<void> {
 
   // The user addressed someone mid-turn: they go next and read the message from the transcript.
   if (state.redirect) {
-    const to = team.agents.find((a) => a.id === state.redirect) ?? lead
+    const to = agentById(team, state.redirect) ?? lead
     state.redirect = undefined
     run.hops++
     run.next = { agentId: to.id, note: 'The user wrote to you in the thread; read their latest message.' }
@@ -380,12 +385,13 @@ function launch(state: RunState): void {
 }
 
 /** Starting or resuming a stretch is consent for another round of hops, turns and spend. */
-function restart(state: RunState, agentId: string, note: string): void {
+function restart(state: RunState, agentId: string, note: string, wave?: RunState['wave']): void {
   state.hopBase = state.run.hops
   state.turnBase = agentTurns(state.run)
   state.costBase = state.run.costUsd
-  // A half-done parallel wave only goes on when the restart continues it.
-  if (state.wave && agentId !== state.run.next?.agentId) state.wave = undefined
+  // A half-done parallel wave only goes on when the restart continues it; a message to a role with copies starts one.
+  if (wave) state.wave = wave
+  else if (state.wave && agentId !== state.run.next?.agentId) state.wave = undefined
   state.redirect = undefined
   state.run.next = { agentId, note }
   state.run.status = 'running'
@@ -399,6 +405,10 @@ function getState(id: string): RunState {
   if (!s) throw new Error(`Unknown thread: ${id}`)
   return s
 }
+
+/** A user message that reaches several copies of a role is a wave whose results go to the lead. */
+const waveOf = (team: Team, ids: string[], note: string): RunState['wave'] =>
+  ids.length > 1 ? { from: leadOf(team).id, queue: ids.slice(1), members: ids, note } : undefined
 
 const userTurn = (text: string, to?: Agent): TeamTurn => ({
   id: randomUUID(),
@@ -485,13 +495,14 @@ export const teamApi = {
     const text = String(goal ?? '').trim().slice(0, 20_000)
     if (!text) throw new Error('Write a goal first.')
     const team = readTeam(projectId)
-    const target = (to && team.agents.find((a) => a.id === to)) || leadOf(team)
+    const ids = entryIds(team, to)
+    const target = to ? (findAgent(team, to) ?? agentById(team, to)) : undefined
     const run: TeamRun = {
       id: randomUUID(),
       projectId,
       goal: text,
       status: 'running',
-      turns: [userTurn(text, to ? target : undefined)],
+      turns: [userTurn(text, target)],
       hops: 0,
       costUsd: 0,
       pending: [],
@@ -501,7 +512,7 @@ export const teamApi = {
     const state: RunState = { run, hopBase: 0, turnBase: 0, costBase: 0, sessions: new Map(), gen: 0 }
     runs.set(run.id, state)
     save(run)
-    restart(state, target.id, '')
+    restart(state, ids[0], '', waveOf(team, ids, ''))
     return run
   },
   async send(runId: string, text: string, to?: string): Promise<void> {
@@ -509,26 +520,30 @@ export const teamApi = {
     const body = String(text ?? '').trim().slice(0, 20_000)
     if (!body) return
     const team = readTeam(state.run.projectId)
-    const target = to ? (team.agents.find((a) => a.id === to) ?? findAgent(team, to)) : undefined
+    const target = to ? (findAgent(team, to) ?? agentById(team, to)) : undefined
+    const note = 'The user wrote to you in the thread; read their latest message.'
+    const asked = state.run.question ? state.run.next?.agentId : undefined
+    // Picked before the message is kept, so with every agent paused it stays in the composer.
+    const ids = state.run.status === 'running' ? null : !target && asked ? [asked] : entryIds(team, to)
     state.run.turns.push(userTurn(body, target))
-    if (state.run.status === 'running') {
+    if (!ids) {
       // Steer the running Claude turn when the message is for whoever is working (or for nobody in particular).
       if (state.turn?.steer && (!target || target.id === state.turnAgentId)) state.turn.steer(`Message from the user, sent while you work: ${body}`)
+      // shortcut: a role with copies gets the message on its first copy only (vi3ecode queues it for each); queue per copy if that matters.
       else if (target) state.redirect = target.id
       save(state.run)
       push(state.run, true)
       return
     }
     save(state.run)
-    const asked = state.run.question ? state.run.next?.agentId : undefined
     state.run.question = undefined
-    restart(state, (target ?? team.agents.find((a) => a.id === asked) ?? leadOf(team)).id, 'The user wrote to you in the thread; read their latest message.')
+    restart(state, ids[0], note, waveOf(team, ids, note))
   },
   async continue(runId: string, agentId?: string): Promise<void> {
     const state = getState(runId)
     if (state.run.status === 'running') return
     const team = readTeam(state.run.projectId)
-    const pick = agentId ? team.agents.find((a) => a.id === agentId) : undefined
+    const pick = agentId ? agentById(team, agentId) : undefined
     restart(state, pick?.id ?? state.run.next?.agentId ?? leadOf(team).id, state.run.next?.note ?? '')
   },
   async respond(runId: string, approvalId: string, allow: boolean): Promise<void> {
@@ -538,7 +553,7 @@ export const teamApi = {
     state.run.pending = state.run.pending.filter((p) => p.id !== approvalId)
     requests.delete(approvalId)
     if (r && r.runId === runId && r.cs.alive) {
-      const agent = readTeam(state.run.projectId).agents.find((a) => a.id === pending?.agentId)
+      const agent = agentById(readTeam(state.run.projectId), pending?.agentId)
       r.cs.respond(approvalId, r.req, !!allow && agent?.permission !== 'read-only')
       record({ source: 'team', kind: allow ? 'approval-allowed' : 'approval-denied', outcome: 'info', projectId: state.run.projectId, engine: 'claude' })
     }

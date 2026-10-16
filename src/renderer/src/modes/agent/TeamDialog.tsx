@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { Plus, RotateCcw, ShieldAlert, X } from 'lucide-react'
+import { Minus, Plus, RotateCcw, ShieldAlert, X } from 'lucide-react'
 import type { Agent, ApprovalMode, EngineId, Team, TeamRun } from '../../../../shared/types'
 import { DEFAULT_TEAM } from '../../../../shared/schema'
+import { copiesOf, copyCount, roleOf } from '../../../../shared/prompt'
 import { api } from '../../api'
 import { useApp } from '../../context'
 import { t } from '../../i18n'
@@ -12,6 +13,8 @@ import { AvatarPicker, SWATCHES, Swatches } from './AvatarPicker'
 import { errorText, saveTeam, setTeam, useRuns, useTeam, workingAgents } from './store'
 
 const MAX_AGENTS = 12 // sanitizeTeam keeps at most 12
+const MAX_COPIES = 8 // per role, as in vi3ecode
+const MAX_RUNNING = 64 // copies across the whole team, as in vi3ecode
 const PERMISSIONS: [ApprovalMode, string][] = [
   ['read-only', 'Read-only'],
   ['ask', 'Ask'],
@@ -88,6 +91,9 @@ export function TeamDialog({ initial, onClose }: { initial?: string; onClose(): 
   const lead = team.agents.find((a) => a.lead) ?? team.agents[0]
   const agent = sel === 'new' ? null : (team.agents.find((a) => a.id === sel) ?? lead)
   const run = runs.find((r) => r.id === runId)
+  // "Fewer copies" waits while the role is working (its queued wave copies are not visible here) or a live thread waits on the last copy.
+  const last = agent ? `${agent.id}~${copyCount(agent)}` : ''
+  const lastBusy = !!agent && (working.has(agent.id) || runs.some((r) => (r.status === 'running' || r.status === 'waiting') && r.next?.agentId === last))
   const untrusted = unconfirmed.flatMap((x) => {
     if (x === 'autoApprove') return team.routing.autoApprove ? [t('Auto-approve')] : []
     const a = team.agents.find((y) => y.id === x && y.permission === 'full')
@@ -113,6 +119,7 @@ export function TeamDialog({ initial, onClose }: { initial?: string; onClose(): 
         <div className="td-scope">
           <span className="badge">{t('Project team')}</span>
           <span className="muted">{t('Every thread runs on this team. Changes apply live.')}</span>
+          {team.agents.every((a) => a.paused) ? <span className="am-warn">{t('Every agent is paused — this thread cannot take a task.')}</span> : null}
           {error ? (
             <span className="td-error" role="alert">
               {error}
@@ -139,10 +146,10 @@ export function TeamDialog({ initial, onClose }: { initial?: string; onClose(): 
             <div className="td-agents" role="list">
               {team.agents.map((a) => (
                 <button key={a.id} role="listitem" className={`td-agent${a.id === agent?.id ? ' active' : ''}`} aria-current={a.id === agent?.id ? 'true' : undefined} onClick={() => setSel(a.id)}>
-                  <Avatar avatar={a.avatar} color={a.color} size={30} status={working.has(a.id) ? 'working' : 'idle'} />
+                  <Avatar avatar={a.avatar} color={a.color} size={30} status={a.paused ? 'paused' : working.has(a.id) ? 'working' : 'idle'} />
                   <span className="col td-agent-text">
                     <span className="td-agent-name">{a.name}</span>
-                    <span className={`td-state${working.has(a.id) ? ' working' : ''}`}>{working.has(a.id) ? t('working') : t('idle')}</span>
+                    <span className={`td-state${!a.paused && working.has(a.id) ? ' working' : ''}`}>{a.paused ? t('paused') : working.has(a.id) ? t('working') : t('idle')}</span>
                   </span>
                 </button>
               ))}
@@ -174,7 +181,7 @@ export function TeamDialog({ initial, onClose }: { initial?: string; onClose(): 
             </div>
           </aside>
           {agent ? (
-            <AgentDetail key={agent.id} team={team} agent={agent} working={working.has(agent.id)} run={run} update={update} onClose={close} onRemoved={() => setSel(lead.id)} />
+            <AgentDetail key={agent.id} team={team} agent={agent} working={working.has(agent.id)} lastBusy={lastBusy} run={run} update={update} onClose={close} onRemoved={() => setSel(lead.id)} />
           ) : (
             <NewAgent team={team} onAdd={add} onCancel={() => setSel(lead.id)} />
           )}
@@ -184,7 +191,7 @@ export function TeamDialog({ initial, onClose }: { initial?: string; onClose(): 
   )
 }
 
-function AgentDetail({ team, agent, working, run, update, onClose, onRemoved }: { team: Team; agent: Agent; working: boolean; run?: TeamRun; update(t: Team): void; onClose(): void; onRemoved(): void }) {
+function AgentDetail({ team, agent, working, lastBusy, run, update, onClose, onRemoved }: { team: Team; agent: Agent; working: boolean; lastBusy: boolean; run?: TeamRun; update(t: Team): void; onClose(): void; onRemoved(): void }) {
   const [picking, setPicking] = useState(false)
   const patch = (p: Partial<Agent>) => update({ ...team, agents: team.agents.map((a) => (a.id === agent.id ? { ...a, ...p } : a)) })
   const others = team.agents.filter((a) => a.id !== agent.id)
@@ -200,8 +207,10 @@ function AgentDetail({ team, agent, working, run, update, onClose, onRemoved }: 
     update({ ...team, agents: others.map((a) => ({ ...a, handoffs: a.handoffs.filter((h) => h !== agent.id) })) })
     onRemoved()
   }
-  const mine = run?.turns.filter((x) => x.kind === 'agent' && x.agentId === agent.id) ?? []
+  const mine = run?.turns.filter((x) => x.kind === 'agent' && roleOf(x.agentId) === agent.id) ?? []
   const cost = mine.reduce((s, x) => s + (x.costUsd ?? 0), 0)
+  const n = copyCount(agent)
+  const full = team.agents.flatMap(copiesOf).length >= MAX_RUNNING
 
   return (
     <section className="td-main" aria-label={agent.name}>
@@ -214,9 +223,12 @@ function AgentDetail({ team, agent, working, run, update, onClose, onRemoved }: 
           <div className="row td-sub">
             <input className="td-role" style={{ color: agent.color }} value={agent.role} maxLength={60} placeholder={t('role')} aria-label={t('Role')} onChange={(e) => patch({ role: e.target.value })} />
             <span className="faint">·</span>
-            <span className={`td-state${working ? ' working' : ''}`}>{working ? t('working') : t('idle')}</span>
+            <span className={`td-state${!agent.paused && working ? ' working' : ''}`}>{agent.paused ? t('paused') : working ? t('working') : t('idle')}</span>
           </div>
         </div>
+        <button className="btn small" onClick={() => patch({ paused: !agent.paused })}>
+          {agent.paused ? t('Resume agent') : t('Pause agent')}
+        </button>
         {!agent.lead ? (
           <button className="btn small td-remove" onClick={remove}>
             {t('Remove')}
@@ -280,6 +292,27 @@ function AgentDetail({ team, agent, working, run, update, onClose, onRemoved }: 
                 ))}
               </div>
               <span className="faint small">{t(APPROVAL_LABEL[agent.permission].hint)}</span>
+            </div>
+            <div className="col">
+              <span className="micro">{t('Parallel copies')}</span>
+              {agent.lead ? (
+                <span className="faint small">{t('The Lead always runs as one.')}</span>
+              ) : (
+                <>
+                  <div className="row td-copies">
+                    <button className="iconbtn" disabled={n <= 1 || lastBusy} aria-label={t('Fewer copies')} title={lastBusy ? t('A copy that would go away is still working, asking or in a parallel wave — try again once it finishes.') : t('Fewer copies')} onClick={() => patch({ instanceCount: n - 1 })}>
+                      <Minus size={13} />
+                    </button>
+                    <span className="mono" aria-live="polite">
+                      ×{n}
+                    </span>
+                    <button className="iconbtn" disabled={n >= MAX_COPIES || full} aria-label={t('More copies')} title={full ? t('A team can run at most 64 agents in total.') : t('More copies')} onClick={() => patch({ instanceCount: n + 1 })}>
+                      <Plus size={13} />
+                    </button>
+                  </div>
+                  <span className="faint small">{t('A handoff to this role reaches every copy at once. Writers still take turns in the same folder.')}</span>
+                </>
+              )}
             </div>
             {run ? (
               <div className="col">

@@ -30,13 +30,26 @@ describe('agents.json', () => {
     const prev = {
       version: 1,
       name: 'Product team',
-      agents: [{ id: 'lead', name: 'Lead', role: 'Orchestrator', engine: 'claude', permission: 'readOnly', sprite: 'portrait-01', prompt: 'p', handoffs: [], tools: ['route', 'summarize'], paused: true, instanceCount: 2, serviceTier: 'priority' }],
+      agents: [
+        { id: 'lead', name: 'Lead', role: 'Orchestrator', engine: 'claude', permission: 'readOnly', sprite: 'portrait-01', prompt: 'p', handoffs: [], tools: ['route', 'summarize'], paused: true, instanceCount: 2, serviceTier: 'priority' },
+        { id: 'dev', name: 'Developer', role: 'Implementation', engine: 'claude', permission: 'edits', sprite: 'portrait-03', prompt: 'd', handoffs: [], instanceCount: 3 }
+      ],
       settings: { autoRelay: true, returnToLead: true, maxAutoRelayHops: 12, supervision: false, autoPickRecommendedMinutes: 30, budget: { maxTurns: null, maxCostUsd: null } }
     }
     const disk = teamToDisk(teamFromDisk(prev), 'p1', prev) as { name: string; agents: Record<string, unknown>[]; settings: Record<string, unknown> }
     expect(disk.name).toBe('Product team')
-    expect(disk.agents[0]).toMatchObject({ tools: ['route', 'summarize'], paused: true, instanceCount: 2, serviceTier: 'priority', prompt: 'p' })
+    expect(disk.agents[0]).toMatchObject({ tools: ['route', 'summarize'], paused: true, serviceTier: 'priority', prompt: 'p' })
+    expect(disk.agents[0].instanceCount).toBeUndefined() // the lead always runs as one
+    expect(disk.agents[1]).toMatchObject({ paused: false, instanceCount: 3 })
     expect(disk.settings).toMatchObject({ supervision: false, autoPickRecommendedMinutes: 30 })
+  })
+  it('round-trips paused and parallel copies, leaving out a count of 1', () => {
+    const team = { ...DEFAULT_TEAM, agents: DEFAULT_TEAM.agents.map((a) => (a.id === 'dev' ? { ...a, paused: true, instanceCount: 2 } : a)) }
+    const disk = JSON.parse(JSON.stringify(teamToDisk(team, 'p1'))) as { agents: Record<string, unknown>[] }
+    expect(disk.agents.find((a) => a.id === 'dev')).toMatchObject({ paused: true, instanceCount: 2 })
+    expect(disk.agents.find((a) => a.id === 'qa')).toMatchObject({ paused: false })
+    expect('instanceCount' in disk.agents.find((a) => a.id === 'qa')!).toBe(false)
+    expect(teamFromDisk(disk)).toEqual(team)
   })
   it('maps sprite names both ways', () => {
     expect(spriteToDisk('glyph:0')).toBe('glyph-01')

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { ArrowRight, Check, CircleCheck, FileText, Globe, ListChecks, Pencil, RotateCcw, Search, Terminal, Users, Wrench, type LucideIcon } from 'lucide-react'
 import type { Agent, Team, TeamRun, TeamTurn } from '../../../../shared/types'
+import { copyCount, roleOf } from '../../../../shared/prompt'
 import { api } from '../../api'
 import { t } from '../../i18n'
 import { Avatar } from '../../components/Avatar'
@@ -22,7 +23,7 @@ const toolIcon = (name: string): LucideIcon => TOOL_ICONS.find(([re]) => re.test
 /** The thread (mount with key=run.id): user bubbles, per-turn steps, agent messages, handoff / done / error cards, approvals, pause banners. */
 export function Transcript({ run, team }: { run: TeamRun; team: Team | null }) {
   const agents = team?.agents ?? []
-  const byId = (id: string) => agents.find((a) => a.id === id)
+  const byId = (id: string) => agents.find((a) => a.id === roleOf(id)) // a copy (`dev~2`) shows as its role
   const byName = (name: string) => agents.find((a) => a.name.toLowerCase() === name.toLowerCase())
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
@@ -100,7 +101,7 @@ export function Transcript({ run, team }: { run: TeamRun; team: Team | null }) {
 function AgentTurn({ turn, agent, targets, onRetry }: { turn: TeamTurn; agent?: Agent; targets: (Agent | string)[]; onRetry?: () => void }) {
   const running = turn.status === 'running'
   const text = stripProtocol(turn.text)
-  const name = agent?.name ?? turn.agentName
+  const name = agent && copyCount(agent) === 1 ? agent.name : turn.agentName // copies keep "Developer #2"
   const avatar = agent ? <Avatar avatar={agent.avatar} color={agent.color} size={18} /> : null
   return (
     <>
@@ -223,14 +224,19 @@ function Banner({ run, team, act }: { run: TeamRun; team: Team | null; act(p: Pr
   const agents = team?.agents ?? []
   const lead = agents.find((a) => a.lead) ?? agents[0]
   const [next, setNext] = useState(run.next?.agentId ?? lead?.id ?? '')
+  const pending = agents.find((a) => a.id === roleOf(run.next?.agentId ?? ''))
   const why: Partial<Record<TeamRun['status'], string>> = {
-    waiting: run.next?.note ? t('Waiting for your OK. Note: {note}', { note: run.next.note }) : t('Waiting for your OK to continue.'),
+    waiting: pending?.paused
+      ? t('{name} is paused — resume it in the team settings, or pick who goes next.', { name: pending.name })
+      : run.next?.note
+        ? t('Waiting for your OK. Note: {note}', { note: run.next.note })
+        : t('Waiting for your OK to continue.'),
     'hop-cap': t('Paused after {n} handoffs (hop limit). Continue for another stretch.', { n: team?.routing.hopLimit ?? run.hops }),
     budget: t('Budget reached for this stretch. Continue to allow another one.'),
     stopped: t('Stopped. Continue picks the thread up again.')
   }
   if (run.status === 'waiting' && run.question) {
-    const asker = agents.find((a) => a.id === run.next?.agentId)
+    const asker = pending
     return (
       <div className="am-card am-banner am-question">
         <div className="row">
@@ -250,7 +256,8 @@ function Banner({ run, team, act }: { run: TeamRun; team: Team | null; act(p: Pr
   return (
     <div className={`am-card am-banner${run.status === 'stopped' ? '' : ' warn'}`}>
       <span className="grow">{text}</span>
-      <select className="select am-next" aria-label={t('Who goes next')} value={next} onChange={(e) => setNext(e.target.value)}>
+      {/* Shows the role; Continue keeps the exact copy (`dev~2`) until another agent is picked. */}
+      <select className="select am-next" aria-label={t('Who goes next')} value={roleOf(next)} onChange={(e) => setNext(e.target.value)}>
         {agents.map((a) => (
           <option key={a.id} value={a.id}>
             {t('Next: {name}', { name: a.name })}

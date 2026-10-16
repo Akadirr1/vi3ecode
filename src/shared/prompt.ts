@@ -34,11 +34,11 @@ export interface TurnEnd {
 const AT_LINE = /^[\s>*_`]*@(handoff|done|ask-user)\b\s*([^:]*?)\s*:\s*(.*)$/i
 const LEGACY = /^[\s>*_`#-]*(HANDOFF|DONE)[*_`]*\s*[:：][*_`]*\s*(.*)$/i
 
-/** Agent ids or names in a target list; `dev~2` addresses a copy of `dev`, which we treat as `dev`. */
+/** Agent ids or names in a target list; `dev~2` addresses one copy of `dev`, and `dev~1` is `dev` itself. */
 const splitTargets = (list: string) =>
   list
     .split(',')
-    .map((x) => x.trim().replace(/^@/, '').replace(/~\d+$/, ''))
+    .map((x) => x.trim().replace(/^@/, '').replace(/~1$/, ''))
     .filter(Boolean)
 
 export function parseTurnEnd(text: string, names: string[]): TurnEnd {
@@ -102,6 +102,41 @@ export function findAgent(team: Team, name: string): Agent | undefined {
 
 export const leadOf = (team: Team): Agent => team.agents.find((a) => a.lead) ?? team.agents[0]
 
+// Parallel copies (vi3ecode's `instanceCount`): copy 1 keeps the role id, the others are `dev~2`…`dev~8`.
+// The saved team keeps one entry per role; copies exist only while a thread runs.
+export const roleOf = (id: string): string => id.replace(/~\d+$/, '')
+export const copyCount = (a: Agent): number => (a.lead ? 1 : Math.min(8, Math.max(1, Math.round(a.instanceCount ?? 1))))
+export const copiesOf = (a: Agent): Agent[] =>
+  copyCount(a) === 1 ? [a] : Array.from({ length: copyCount(a) }, (_, i) => ({ ...a, id: i ? `${a.id}~${i + 1}` : a.id, name: `${a.name} #${i + 1}` }))
+
+/** An agent or one copy of it by id (`dev~1` is `dev`). */
+export const agentById = (team: Team, id?: string): Agent | undefined => {
+  const key = id?.replace(/~1$/, '')
+  return team.agents.flatMap(copiesOf).find((a) => a.id === key)
+}
+
+/** Who a handoff target reaches: one copy for `dev~2`, every copy of a role otherwise; a paused role is only its first copy, which waits. */
+export function reach(team: Team, name: string): Agent[] {
+  if (/~\d+$/.test(name)) {
+    const one = agentById(team, name)
+    return one ? [one] : []
+  }
+  const role = findAgent(team, name)
+  return !role ? [] : copiesOf(role).slice(0, role.paused ? 1 : undefined)
+}
+
+/**
+ * Who a user message goes to: every copy of the addressed role, or the one copy named; a paused or unknown target
+ * falls back to the lead, else the first agent that is not paused (as in vi3ecode).
+ */
+export function entryIds(team: Team, to?: string): string[] {
+  const ids = to ? reach(team, to).filter((a) => !a.paused).map((a) => a.id) : []
+  if (ids.length) return ids
+  const awake = team.agents.find((a) => a.lead && !a.paused) ?? team.agents.find((a) => !a.paused)
+  if (!awake) throw new Error('Every agent is paused — this thread cannot take a task.')
+  return [awake.id]
+}
+
 export type Next =
   | { kind: 'handoff'; agentIds: string[]; note: string }
   | { kind: 'done'; summary: string }
@@ -110,7 +145,7 @@ export type Next =
 
 /** Who `agent` may hand off to: its allowed list, or everyone else when the list is empty. */
 export const handoffTargets = (team: Team, agent: Agent): Agent[] =>
-  team.agents.filter((a) => a.id !== agent.id && (agent.handoffs.length === 0 || agent.handoffs.includes(a.id)))
+  team.agents.filter((a) => a.id !== roleOf(agent.id) && (agent.handoffs.length === 0 || agent.handoffs.includes(a.id)))
 
 /**
  * Routing rules: only the lead finishes the goal. With return-to-lead on, anything unclear (no protocol
@@ -131,11 +166,12 @@ export function decideNext(team: Team, speaker: Agent, end: TurnEnd): Next {
     const allowed = handoffTargets(team, speaker)
     const ids: string[] = []
     for (const name of end.handoff.to) {
-      const target = findAgent(team, name)
+      const reached = reach(team, name)
+      const target = reached.length ? team.agents.find((a) => a.id === roleOf(reached[0].id)) : undefined
       if (!target) return back(`${speaker.name} handed off to "${name}", which is not a teammate: ${end.handoff.note}`)
-      if (target.id === speaker.id) return back(`${speaker.name} handed off to itself.`)
+      if (target.id === roleOf(speaker.id)) return back(`${speaker.name} handed off to itself.`)
       if (!allowed.some((a) => a.id === target.id)) return back(`${speaker.name} may not hand off to ${target.name}: ${end.handoff.note}`)
-      if (!ids.includes(target.id)) ids.push(target.id)
+      for (const a of reached) if (!ids.includes(a.id)) ids.push(a.id)
     }
     return { kind: 'handoff', agentIds: ids, note: end.handoff.note }
   }
@@ -192,7 +228,9 @@ export function buildTeamPrompt(o: {
 }): string {
   const lead = leadOf(o.team)
   const isLead = o.agent.id === lead.id
-  const targets = handoffTargets(o.team, o.agent)
+  const targets = handoffTargets(o.team, o.agent).filter((a) => !a.paused)
+  const copied = targets.filter((a) => copyCount(a) > 1)
+  const mine = copiesOf(o.team.agents.find((a) => a.id === roleOf(o.agent.id)) ?? o.agent)
   const task = o.note
     ? `${o.from ?? 'A teammate'} handed off to you: ${o.note}`
     : isLead && !o.turns.some((t) => t.kind === 'agent')
@@ -208,6 +246,7 @@ export function buildTeamPrompt(o: {
         targets.length
           ? `  @handoff <id>: <one-line brief>   — you may hand off to: ${targets.map((a) => a.id).join(', ')} (two or more ids, comma separated, run in parallel)`
           : `  (you have no handoff targets)`,
+        ...copied.map((a) => `  ${a.id} runs as ${copyCount(a)} copies and reaches all of them at once; write ${a.id}~2 (and so on) to reach just one.`),
         `  @done: <one-line summary>${isLead ? '   — only when the goal is achieved and verified' : `   — hands the result back to ${lead.name}`}`,
         `  @ask-user: <question>   — only when you cannot proceed without the user's answer`
       ]
@@ -216,11 +255,17 @@ export function buildTeamPrompt(o: {
     const fresh = threadLines(o.turns.slice(o.since + 1))
     return [`NEW IN THE THREAD SINCE YOUR LAST TURN`, fresh.length ? fresh.join('\n\n') : '(nothing new)', ``, `YOUR TASK`, task, ``, ...protocol].join('\n')
   }
-  const roster = o.team.agents.map((a) => `- ${a.id} — ${a.name} (${a.role || 'teammate'})${a.id === lead.id ? ' [lead]' : ''}`).join('\n')
+  const roster = o.team.agents
+    .flatMap(copiesOf)
+    .map((a) => `- ${a.id} — ${a.name} (${a.role || 'teammate'})${a.id === lead.id ? ' [lead]' : ''}${a.paused ? ' [paused]' : ''}`)
+    .join('\n')
   const lines = threadLines(o.turns)
   return [
     `You are ${o.agent.name}, the ${o.agent.role || 'teammate'} agent on a multi-agent team working inside this repository. The team shares one thread; teammates take turns and hand work to each other.`,
     o.agent.instructions || '',
+    ...(mine.length > 1
+      ? [`You are ${o.agent.id}, one of ${mine.length} copies of this role; ${mine.filter((a) => a.id !== o.agent.id).map((a) => a.id).join(', ')} may get the same brief. Pick a distinct part of the work and leave theirs alone.`]
+      : []),
     ``,
     `TEAM`,
     roster,
