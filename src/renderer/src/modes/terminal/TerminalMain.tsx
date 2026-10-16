@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Columns2, Grid2x2, Plus, Square, SquareTerminal } from 'lucide-react'
-import type { PtyInfo } from '../../../../shared/types'
+import { createPortal } from 'react-dom'
+import { Bell, BellOff, Columns2, Grid2x2, Plus, Square, SquareTerminal, X } from 'lucide-react'
+import type { PtyInfo, SavedPane } from '../../../../shared/types'
 import { api } from '../../api'
 import { useApp } from '../../context'
 import { EngineIcon } from '../../components/EngineIcon'
@@ -9,15 +10,22 @@ import { errorText } from '../../components/format'
 import { PaneCard } from './Pane'
 import { PaneForm, PopButton, type Launch } from './PaneForm'
 import { focusPane, getPanes, setPanes, usePanes, type Pane } from './store'
-import { estimateSize, newRegistry, pasteWhenReady, show, xtermTheme } from './xterm'
+import { IDLE, estimateSize, newRegistry, observe, pasteWhenReady, screenHint, show, streamHint, xtermTheme } from './xterm'
 import './terminal-mode.css'
 
-const LAYOUTS = [
+const LAYOUTS: { size: number; cols: number; label: string; icon?: typeof Square }[] = [
   { size: 1, cols: 1, label: '1 pane', icon: Square },
   { size: 2, cols: 2, label: '2 columns', icon: Columns2 },
-  { size: 4, cols: 2, label: '2 × 2 grid', icon: Grid2x2 }
+  { size: 4, cols: 2, label: '2 × 2 grid', icon: Grid2x2 },
+  // The original's grid presets, named columns x rows.
+  { size: 6, cols: 2, label: '2 x 3' },
+  { size: 8, cols: 2, label: '2 x 4' },
+  { size: 9, cols: 3, label: '3 x 3' },
+  { size: 12, cols: 3, label: '3 x 4' }
 ]
 const LAYOUT_KEY = 'vi3ecode.terminalLayout'
+/** Master switch for every pane's bell; off by default, like the original. */
+const ALERT_KEY = 'vi3ecode.terminalAlert'
 /** A pane is BUSY while it prints output the user did not just type (echo arrives within ECHO_MS). */
 const BUSY_MS = 1500
 const ECHO_MS = 300
@@ -40,13 +48,35 @@ export function TerminalMain({ active }: { active: boolean }) {
   const { panes, focused, tick } = usePanes(pid)
   const [loaded, setLoaded] = useState(false)
   const [size, setSize] = useState(loadLayout)
+  const [alertOn, setAlertOn] = useState(() => {
+    try {
+      return localStorage.getItem(ALERT_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const alertRef = useRef(alertOn)
+  alertRef.current = alertOn
+  const [toasts, setToasts] = useState<{ id: string; text: string }[]>([])
   const reg = useRef(newRegistry()).current
   const gridRef = useRef<HTMLDivElement>(null)
   // Ignore an intent left over from before this mount (e.g. another project).
   const seenIntent = useRef(ctx.terminalIntent?.nonce)
+  /** The saved layout was checked: from then on every pane change is saved. */
+  const restored = useRef(false)
   const layout = LAYOUTS.find((l) => l.size === size)!
 
   useEffect(() => {
+    // shortcut: only the open project's panes are watched (this view is mounted per project); move to main to watch all.
+    const step = (id: string, hint: boolean, output: boolean) => {
+      const { next, done } = observe(reg.activity.get(id) ?? IDLE, { hint, output, at: Date.now() })
+      reg.activity.set(id, next)
+      const p = done ? getPanes(pid).panes.find((x) => x.info.id === id) : undefined
+      if (!p?.info.engine || p.notify === false || !alertRef.current) return
+      const text = t('{name} · task finished', { name: p.info.title })
+      setToasts((ts) => [...ts.filter((x) => x.id !== id), { id, text }])
+      void api.pty.alert(id, text)
+    }
     void api.pty.list(pid).then((list) => {
       setPanes(pid, (s) => {
         // This window's order and titles win for panes still running; panes started elsewhere are appended.
@@ -62,25 +92,31 @@ export function TerminalMain({ active }: { active: boolean }) {
       if (Date.now() - (reg.typed.get(id) ?? 0) > ECHO_MS) reg.output.set(id, Date.now())
       const live = reg.terms.get(id)
       if (live) show(reg, id, live, offset, data)
+      // The previous chunk's end too: the status line can arrive split across chunks.
+      const tail = (reg.tail.get(id) ?? '') + data
+      reg.tail.set(id, tail.slice(-128))
+      step(id, streamHint(tail.slice(-4096)) || (!!live && screenHint(live.term)), true)
     })
     const offExit = api.pty.onExit((id, code) => {
       reg.terms.get(id)?.term.write(`\r\n\x1b[2m[${t('process exited with code {code}', { code })}]\x1b[0m\r\n`)
       setPanes(pid, (s) => (s.panes.some((p) => p.info.id === id) ? { panes: s.panes.map((p) => (p.info.id === id ? { ...p, exitCode: code, busy: false } : p)) } : null))
     })
-    const timer = setInterval(
-      () =>
-        setPanes(pid, (s) => {
-          let changed = false
-          const next = s.panes.map((p) => {
-            const busy = p.exitCode === undefined && Date.now() - (reg.output.get(p.info.id) ?? 0) < BUSY_MS
-            if (!!p.busy === busy) return p
-            changed = true
-            return { ...p, busy }
-          })
-          return changed ? { panes: next } : null
-        }),
-      500
-    )
+    const timer = setInterval(() => {
+      for (const p of getPanes(pid).panes) {
+        const live = reg.terms.get(p.info.id)
+        if (p.info.engine && live && p.exitCode === undefined) step(p.info.id, screenHint(live.term), false)
+      }
+      setPanes(pid, (s) => {
+        let changed = false
+        const next = s.panes.map((p) => {
+          const busy = p.exitCode === undefined && Date.now() - (reg.output.get(p.info.id) ?? 0) < BUSY_MS
+          if (!!p.busy === busy) return p
+          changed = true
+          return { ...p, busy }
+        })
+        return changed ? { panes: next } : null
+      })
+    }, 500)
     // Theme switches land on <html> after our effects run, so follow the attribute itself.
     const retheme = () => {
       const theme = xtermTheme()
@@ -100,7 +136,7 @@ export function TerminalMain({ active }: { active: boolean }) {
   }, [pid, reg])
 
   /** Starts a pane, or restarts `replace` in its place with new launch settings. */
-  const launch = async (l: Launch, replace?: Pane): Promise<PtyInfo | null> => {
+  const launch = async (l: Launch, replace?: Pane, notify?: boolean): Promise<PtyInfo | null> => {
     const cur = replace && reg.terms.get(replace.info.id)?.term
     const dims = cur ? { cols: cur.cols, rows: cur.rows } : estimateSize(gridRef.current, layout.cols, layout.size / layout.cols)
     if (replace) void api.pty.kill(replace.info.id)
@@ -108,7 +144,7 @@ export function TerminalMain({ active }: { active: boolean }) {
       const info = await api.pty.create(pid, { ...dims, ...l })
       reg.fresh.add(info.id)
       setPanes(pid, (s) => ({
-        panes: replace ? s.panes.map((p) => (p.info.id === replace.info.id ? { info } : p)) : [...s.panes, { info }],
+        panes: replace ? s.panes.map((p) => (p.info.id === replace.info.id ? { info, notify: replace.notify } : p)) : [...s.panes, { info, notify }],
         focused: info.id,
         tick: s.tick + 1
       }))
@@ -154,6 +190,33 @@ export function TerminalMain({ active }: { active: boolean }) {
       if (id) pasteWhenReady(reg, id, intent.text)
     })()
   }, [ctx.terminalIntent, loaded])
+
+  // After a restart main has no panes: reopen the saved ones once Terminal Mode is first shown.
+  useEffect(() => {
+    if (!loaded || !active || restored.current) return
+    restored.current = true
+    if (getPanes(pid).panes.length) return
+    void api.pty.layout(pid).then(async (saved) => {
+      for (const p of saved) await launch({ engine: p.engine, model: p.model, effort: p.effort, title: p.title }, undefined, p.notify)
+      const first = getPanes(pid).panes[0]
+      if (first) focusPane(pid, first.info.id)
+    })
+  }, [loaded, active])
+
+  const saved = JSON.stringify(panes.map((p): SavedPane => ({ engine: p.info.engine, model: p.info.model, effort: p.info.effort, title: p.info.title, notify: p.notify })))
+  useEffect(() => {
+    if (restored.current) void api.pty.saveLayout(pid, JSON.parse(saved))
+  }, [saved])
+
+  const toggleAlert = () => {
+    setAlertOn(!alertOn)
+    try {
+      localStorage.setItem(ALERT_KEY, alertOn ? '0' : '1')
+    } catch {
+      // storage unavailable: the switch lasts this session
+    }
+  }
+  const dismiss = (id: string) => setToasts((ts) => ts.filter((x) => x.id !== id))
 
   const pickLayout = (n: number) => {
     setSize(n)
@@ -214,10 +277,19 @@ export function TerminalMain({ active }: { active: boolean }) {
           </>,
           'right'
         )}
+        <button
+          className={`iconbtn tm-hbtn${alertOn ? ' active' : ''}`}
+          aria-pressed={alertOn}
+          aria-label={t('Alert')}
+          title={t(alertOn ? 'All pane notifications on (master switch) — panes can be muted individually' : 'All pane notifications off (master switch)')}
+          onClick={toggleAlert}
+        >
+          {alertOn ? <Bell size={14} /> : <BellOff size={14} />}
+        </button>
         <div className="seg tm-layout" role="group" aria-label={t('Layout')}>
           {LAYOUTS.map(({ size: n, label, icon: Icon }) => (
             <button key={n} aria-pressed={size === n} title={t(label)} aria-label={t(label)} onClick={() => pickLayout(n)}>
-              <Icon size={13} />
+              {Icon ? <Icon size={13} /> : <span className="tm-layout-n">{label.replaceAll(' ', '')}</span>}
             </button>
           ))}
         </div>
@@ -239,6 +311,7 @@ export function TerminalMain({ active }: { active: boolean }) {
             onFocus={() => focused !== p.info.id && setPanes(pid, () => ({ focused: p.info.id }))}
             onApply={(l) => apply(p, l)}
             onRestart={() => restart(p)}
+            onNotify={() => setPanes(pid, (s) => ({ panes: s.panes.map((x) => (x.info.id === p.info.id ? { ...x, notify: x.notify === false } : x)) }))}
             onClose={() => close(p)}
           />
         ))}
@@ -285,6 +358,35 @@ export function TerminalMain({ active }: { active: boolean }) {
           </div>
         ) : null}
       </div>
+      {toasts.length
+        ? createPortal(
+            <div className="tm-toasts">
+              {toasts.map((n) => (
+                <div key={n.id} className="tm-toast" role="status">
+                  <button
+                    className="tm-toast-body"
+                    onClick={() => {
+                      ctx.setMode('terminal')
+                      ctx.openTool(null)
+                      focusPane(pid, n.id)
+                      dismiss(n.id)
+                    }}
+                  >
+                    <Bell size={15} aria-hidden />
+                    <span className="grow">
+                      <span className="tm-toast-title">{n.text}</span>
+                      <span className="micro">{ctx.project.name}</span>
+                    </span>
+                  </button>
+                  <button className="iconbtn" aria-label={t('Close')} onClick={() => dismiss(n.id)}>
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   )
 }

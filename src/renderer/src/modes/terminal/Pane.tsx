@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { RotateCcw, SlidersHorizontal, X } from 'lucide-react'
+import { Bell, BellOff, RotateCcw, SlidersHorizontal, X } from 'lucide-react'
 import { api } from '../../api'
 import { useApp } from '../../context'
 import { EngineIcon } from '../../components/EngineIcon'
@@ -24,9 +24,11 @@ export function PaneCard(props: {
   onApply(l: Launch): void
   onRestart(): void
   onClose(): void
+  onNotify(): void
 }) {
   const { engines } = useApp()
   const { info, exitCode, busy } = props.pane
+  const ring = props.pane.notify !== false
   const engine = engines.find((e) => e.id === info.engine)
   const [label, tone] = exitCode !== undefined ? ['Exited', exitCode ? 'danger' : ''] : busy ? ['Busy', 'brand'] : ['Ready', 'tm-ready']
   return (
@@ -56,6 +58,17 @@ export function PaneCard(props: {
             </>
           )}
         </PopButton>
+        {info.engine ? (
+          <button
+            className="iconbtn tm-hbtn"
+            aria-pressed={ring}
+            aria-label={t(ring ? 'Turn off notifications for this pane' : 'Turn on notifications for this pane')}
+            title={t(ring ? 'Notifications on — alerts when this pane finishes' : 'Notifications off')}
+            onClick={props.onNotify}
+          >
+            {ring ? <Bell size={14} /> : <BellOff size={14} />}
+          </button>
+        ) : null}
         <button className="iconbtn tm-hbtn" title={t('Restart pane')} aria-label={t('Restart pane')} onClick={props.onRestart}>
           <RotateCcw size={14} />
         </button>

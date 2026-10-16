@@ -24,3 +24,17 @@ describe('engine pane command line', () => {
     expect(engineArgs('claude')).toEqual([])
   })
 })
+
+describe('saved terminal layout', () => {
+  it('keeps only what relaunching a pane needs', async () => {
+    const { sanitizeLayout } = await import('../src/main/pty')
+    expect(sanitizeLayout('x')).toEqual([])
+    expect(
+      sanitizeLayout([null, { engine: 'claude', model: 'opus', title: 'A'.repeat(60), command: 'rm -rf ~', notify: false }, { title: 'Terminal 2', notify: true }])
+    ).toEqual([
+      { engine: 'claude', model: 'opus', title: 'A'.repeat(40), notify: false },
+      { title: 'Terminal 2' }
+    ].map((p) => ({ engine: undefined, model: undefined, effort: undefined, ...p })))
+    expect(sanitizeLayout(Array(100).fill({ title: 't' }))).toHaveLength(48)
+  })
+})

@@ -731,5 +731,13 @@
   "Unsaved work in the worktree": "Worktree'de kaydedilmemiş iş var",
   "The worktree has uncommitted changes or {branch} has commits that are not merged yet. Removing now deletes them permanently.": "Worktree'de commit'lenmemiş değişiklikler var ya da {branch} üzerinde henüz birleştirilmemiş commit'ler bulunuyor. Şimdi silmek bunları kalıcı olarak yok eder.",
   "Could not remove the thread's worktree": "Thread'in worktree'si silinemedi",
-  "Another thread is working in the project folder. Merge once it finishes.": "Proje klasöründe başka bir thread çalışıyor. O bitince birleştir."
+  "Another thread is working in the project folder. Merge once it finishes.": "Proje klasöründe başka bir thread çalışıyor. O bitince birleştir.",
+  "Alert": "Bildirim",
+  "All pane notifications on (master switch) — panes can be muted individually": "Tüm panel bildirimleri açık (ana anahtar) — paneller tek tek kapatılabilir",
+  "All pane notifications off (master switch)": "Tüm panel bildirimleri kapalı (ana anahtar)",
+  "Turn off notifications for this pane": "Bu panel için bildirimi kapat",
+  "Turn on notifications for this pane": "Bu panel için bildirimi aç",
+  "Notifications on — alerts when this pane finishes": "Bildirim açık — bu panel bitince haber verilir",
+  "Notifications off": "Bildirim kapalı",
+  "{name} · task finished": "{name} · işlem bitti"
 }

@@ -27,7 +27,7 @@ const api = {
   memory: ns('memory', ['list', 'save', 'remove']),
   activity: ns('activity', ['list', 'live']),
   pty: {
-    ...ns('pty', ['create', 'list', 'attach', 'kill']),
+    ...ns('pty', ['create', 'list', 'attach', 'kill', 'layout', 'saveLayout', 'alert']),
     write: (id: string, data: string) => ipcRenderer.send('pty:write', id, data),
     resize: (id: string, cols: number, rows: number) => ipcRenderer.send('pty:resize', id, cols, rows),
     onData: on('pty:data'),

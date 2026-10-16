@@ -1,14 +1,14 @@
 // Terminal panes: real PTYs (node-pty), rendered by xterm.js in the renderer.
 import * as pty from 'node-pty'
 import { randomUUID } from 'node:crypto'
-import type { EngineId, PtyInfo } from '../shared/types'
+import type { EngineId, PtyInfo, SavedPane } from '../shared/types'
 import { buildBrief } from '../shared/memory'
-import { getProject, getSettings } from './store'
-import { emit } from './events'
+import { getProject, getSettings, userDir } from './store'
+import { emit, notify } from './events'
 import { record, registerLive } from './activity'
 import { binOf, getAdapter, spawnTarget } from './engines'
 import { dataDir, listMemory } from './project'
-import { writeFileAtomic } from './fsutil'
+import { readJson, writeFileAtomic, writeJson } from './fsutil'
 
 interface Pane {
   info: PtyInfo
@@ -86,6 +86,29 @@ function engineLaunch(projectId: string, engine: EngineId, model?: string, effor
   return { command, label: adapter.label, model: m, effort: e }
 }
 
+// In userData rather than the repo's .vi3ecode/: a cloned repo must not get to launch engine CLIs on open.
+const layoutsFile = () => userDir('terminal-layouts.json')
+const readLayouts = (): Record<string, unknown> => {
+  const all = readJson<unknown>(layoutsFile(), {})
+  return all && typeof all === 'object' && !Array.isArray(all) ? (all as Record<string, unknown>) : {}
+}
+const text = (v: unknown, max: number) => (typeof v === 'string' && v ? v.slice(0, max) : undefined)
+
+/** Keeps only what create() needs to relaunch each pane; create() validates engine and model again. */
+export function sanitizeLayout(panes: unknown): SavedPane[] {
+  if (!Array.isArray(panes)) return []
+  return panes
+    .filter((p): p is Record<string, unknown> => !!p && typeof p === 'object')
+    .slice(0, 48)
+    .map((p) => ({
+      engine: text(p.engine, 40) as EngineId | undefined,
+      model: text(p.model, 200),
+      effort: text(p.effort, 40),
+      title: text(p.title, 40) ?? '',
+      ...(p.notify === false ? { notify: false } : {})
+    }))
+}
+
 export const ptyApi = {
   async create(
     projectId: string,
@@ -130,6 +153,18 @@ export const ptyApi = {
   },
   async kill(id: string): Promise<void> {
     panes.get(id)?.proc.kill()
+  },
+  async layout(projectId: string): Promise<SavedPane[]> {
+    const all = readLayouts()
+    return sanitizeLayout(Object.hasOwn(all, projectId) ? all[projectId] : [])
+  },
+  async saveLayout(projectId: string, list: SavedPane[]): Promise<void> {
+    getProject(projectId)
+    writeJson(layoutsFile(), { ...readLayouts(), [projectId]: sanitizeLayout(list) })
+  },
+  async alert(id: string, text: string): Promise<void> {
+    const p = panes.get(id)
+    if (p && typeof text === 'string') notify(text.slice(0, 100), getProject(p.info.projectId).name)
   }
 }
 

@@ -22,6 +22,9 @@ export interface Registry {
   /** Last keystroke and last output not caused by one, per pane: drives the BUSY badge. */
   typed: Map<string, number>
   output: Map<string, number>
+  /** Bell detection per pane, and the end of its last output chunk. */
+  activity: Map<string, Activity>
+  tail: Map<string, string>
 }
 
 export const newRegistry = (): Registry => ({
@@ -30,8 +33,43 @@ export const newRegistry = (): Registry => ({
   fresh: new Set(),
   waiting: new Map(),
   typed: new Map(),
-  output: new Map()
+  output: new Map(),
+  activity: new Map(),
+  tail: new Map()
 })
+
+/** An engine CLI is working while it shows "esc to interrupt"; the original's thresholds. */
+export interface Activity {
+  thinking: boolean
+  lastHintAt: number
+  hintSince: number | null
+  lastOutputAt: number
+}
+export const IDLE: Activity = { thinking: false, lastHintAt: 0, hintSince: null, lastOutputAt: 0 }
+const ENTER_MS = 500
+const DONE_AFTER_HINT_MS = 2500
+const QUIET_MS = 1000
+
+/** One observation of a pane; `done` is true on the step where a working pane goes quiet. */
+export function observe(a: Activity, o: { hint: boolean; output: boolean; at: number }): { next: Activity; done: boolean } {
+  const lastOutputAt = o.output ? o.at : a.lastOutputAt
+  const lastHintAt = o.hint ? o.at : a.lastHintAt
+  const hintSince = o.hint ? (a.hintSince ?? o.at) : null
+  if (o.hint) return { next: { thinking: a.thinking || o.at - hintSince! >= ENTER_MS, lastHintAt, hintSince, lastOutputAt }, done: false }
+  const done = a.thinking && o.at - lastHintAt > DONE_AFTER_HINT_MS && o.at - lastOutputAt > QUIET_MS
+  return { next: { thinking: a.thinking && !done, lastHintAt, hintSince, lastOutputAt }, done }
+}
+
+const CSI = /(?:\x1b\[|\x9b)[0-9;?]*[ -/]*[@-~]/g
+export const streamHint = (text: string) => /interrupt/i.test(text.replace(CSI, ''))
+
+/** The status line in the bottom 8 rows, where engine CLIs draw it. */
+export function screenHint(term: Terminal): boolean {
+  const b = term.buffer.active
+  let text = ''
+  for (let y = Math.max(0, term.rows - 8); y < term.rows; y++) text += (b.getLine(b.baseY + y)?.translateToString(true) ?? '') + '\n'
+  return /interrupt/i.test(text)
+}
 
 const PANE_CHROME = { width: 30, height: 56 } // host inset + scrollbar, pane header
 

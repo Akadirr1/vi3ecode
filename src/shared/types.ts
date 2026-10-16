@@ -334,6 +334,16 @@ export interface PtyInfo {
   effort?: string
 }
 
+/** What a pane runs, saved per project so the grid reopens after a restart (never its output). */
+export interface SavedPane {
+  engine?: EngineId
+  model?: string
+  effort?: string
+  title: string
+  /** False when the pane's bell is off. */
+  notify?: boolean
+}
+
 // ---- approvals (engines that ask before acting) ----
 
 export interface PendingApproval {
@@ -555,6 +565,11 @@ export interface Api {
     write(id: string, data: string): void
     resize(id: string, cols: number, rows: number): void
     kill(id: string): Promise<void>
+    /** The project's panes as last saved, in grid order. */
+    layout(projectId: string): Promise<SavedPane[]>
+    saveLayout(projectId: string, panes: SavedPane[]): Promise<void>
+    /** OS notification for a pane that finished, shown only while the app is in the background. */
+    alert(id: string, text: string): Promise<void>
     onData(cb: (id: string, data: string) => void): Unsubscribe
     onExit(cb: (id: string, code: number) => void): Unsubscribe
   }

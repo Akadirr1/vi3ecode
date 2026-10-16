@@ -131,7 +131,8 @@
   border-color: var(--line-2);
   background: var(--accent-soft);
   color: var(--text-3);
-  flex-shrink: 1;
+  /* Narrow panes (3-column grids) give up the chips before the pane name. */
+  flex-shrink: 8;
 }
 
 .tm-hbtn {
@@ -360,4 +361,56 @@
 
 .ts-none {
   padding: 4px 8px;
+}
+
+.tm-layout-n {
+  font: 600 10.5px var(--mono);
+}
+
+.tm-toasts {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(340px, calc(100vw - 32px));
+}
+
+.tm-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--ok);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.3);
+}
+
+.tm-toast-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 10px;
+  padding: 6px;
+  border: 0;
+  background: none;
+  color: var(--ok);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tm-toast-body .grow {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tm-toast-title {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

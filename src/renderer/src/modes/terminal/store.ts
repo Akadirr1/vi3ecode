@@ -7,6 +7,8 @@ export interface Pane {
   info: PtyInfo
   exitCode?: number
   busy?: boolean
+  /** False when the pane's bell is off (engine panes ring by default). */
+  notify?: boolean
 }
 
 export interface PaneState {

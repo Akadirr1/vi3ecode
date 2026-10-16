@@ -42,10 +42,12 @@ Side-by-side details: [MAPPING.md](MAPPING.md).
 
 ## Terminal Mode
 
-- [x] Real PTY panes (xterm.js + node-pty), 1 / 2 / 2×2 layouts, tab strip for more
+- [x] Real PTY panes (xterm.js + node-pty), 1 / 2 / 2×2 and the original's 2 x 3 / 2 x 4 / 3 x 3 / 3 x 4 layouts, tab strip for more
 - [x] Engine panes with model / effort flags, status badges, restart, settings
 - [x] Memory brief injected into Claude panes (`--append-system-prompt-file`)
-- [ ] Larger layout presets, per-pane mic / bell, restoring panes after restart
+- [x] Per-pane bell on engine panes + master "Alert" switch (off by default): "{name} · task finished" toast, OS notification in the background
+- [x] Panes reopen after a restart (engine, model, effort, title, bell; `userData/terminal-layouts.json`)
+- [ ] Custom grid size, per-pane mic (needs a cloud dictation key), scrollback and engine conversation resume after restart
 
 ## Around the agent
 
